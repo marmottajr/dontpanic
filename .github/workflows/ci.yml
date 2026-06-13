@@ -65,9 +65,29 @@ jobs:
       - name: Test (with coverage)
         run: pnpm test
 
+      - name: E2E (backend, real Postgres)
+        run: pnpm --filter @dontpanic/api test:e2e
+
       - name: Audit (fail on high/critical)
         run: pnpm audit --audit-level high
         continue-on-error: true
 
       - name: Build
         run: pnpm build
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build shared contracts
+        run: pnpm --filter @dontpanic/shared build
+      - name: Install Playwright (chromium)
+        run: pnpm --filter @dontpanic/web exec playwright install --with-deps chromium
+      - name: Playwright smoke
+        run: pnpm --filter @dontpanic/web test:e2e

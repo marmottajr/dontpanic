@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@dontpanic/config": "workspace:*",
+    "@playwright/test": "^1.60.0",
     "@storybook/addon-a11y": "10.4.4",
     "@storybook/addon-docs": "10.4.4",
     "@storybook/nextjs": "10.4.4",
