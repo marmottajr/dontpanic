@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+.next/
+out/
+.turbo/
+storybook-static/
+*.tsbuildinfo
+
+# tests
+coverage/
+playwright-report/
+test-results/
+
+# env (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# misc
+*.log
+.DS_Store
+prisma/*.db

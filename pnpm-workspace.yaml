@@ -1,0 +1,30 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  '@sentry/cli': false
+  '@swc/core': true
+  argon2: true
+  esbuild: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@aws-sdk/client-s3@3.1068.0'
+  - '@aws-sdk/client-ses@3.1068.0'
+  - '@aws-sdk/s3-request-presigner@3.1068.0'
+  - eslint@10.5.0
+  - lucide-react@1.18.0
+  - react-hook-form@7.79.0
+onlyBuiltDependencies:
+  - esbuild
+  - "@prisma/client"
+  - prisma
+  - "@prisma/engines"
+  - argon2
+  - sharp
+  - "@swc/core"
+  - unrs-resolver
