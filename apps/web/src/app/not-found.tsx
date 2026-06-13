@@ -22,15 +22,11 @@ export default function NotFound() {
         </p>
 
         <div className="space-y-2">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            {t('title')}
-          </h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground">{t('body')}</p>
         </div>
 
-        <p className="font-mono text-xs text-muted-foreground">
-          Marvin: “I’d look for it, but I’ve got this terrible pain in all the diodes down my left side.”
-        </p>
+        <p className="font-mono text-xs text-muted-foreground">{t('marvin')}</p>
 
         <Button asChild size="lg">
           <Link href="/">{t('home')}</Link>

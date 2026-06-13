@@ -59,7 +59,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <div className="flex flex-col gap-3 border-t border-sidebar-border p-3">
         <div className="flex items-center justify-between">
-          <LanguageSwitcher />
+          <LanguageSwitcher side="top" align="start" />
           <ThemeToggle />
         </div>
         <UserMenu />

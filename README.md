@@ -20,8 +20,8 @@ It arrives with authentication, two-factor, profiles, file uploads,
 internationalisation, theming, observability and tests — already done. I did
 most of it while you were asleep. Nobody thanked me.
 
-They call it "Hello World". It's bigger on the inside. Like my capacity for
-disappointment.
+A glorified "Hello, World", you'd think. It's bigger on the inside — it's
+**DontPanic**. Like my capacity for disappointment.
 
 ### The stack _(I memorised it in 0.0000001 seconds; I have nothing else to do)_
 
@@ -112,8 +112,8 @@ Já vem com autenticação, dois fatores, perfis, upload de arquivos,
 internacionalização, temas, observabilidade e testes — prontos. Fiz quase tudo
 enquanto você dormia. Ninguém me agradeceu.
 
-Chamam de "Hello World". É maior por dentro. Como a minha capacidade de
-decepção.
+Você pensa que é um mero "Hello, World". É maior por dentro — é o
+**DontPanic**. Como a minha capacidade de decepção.
 
 ### A stack _(decorei em 0,0000001 segundo; não tenho mais nada pra fazer)_
 

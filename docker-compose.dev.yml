@@ -21,6 +21,10 @@ x-app-volumes: &app-volumes
   - nm_web:/app/apps/web/node_modules
   - nm_shared:/app/packages/shared/node_modules
   - nm_config:/app/packages/config/node_modules
+  # Keep the containers' build output (root-owned) OFF the host bind-mount,
+  # so a host-side `pnpm build` never hits EACCES on container-written files.
+  - api_dist:/app/apps/api/dist
+  - web_next:/app/apps/web/.next
 
 services:
   deps:
@@ -99,3 +103,5 @@ volumes:
   nm_web:
   nm_shared:
   nm_config:
+  api_dist:
+  web_next:

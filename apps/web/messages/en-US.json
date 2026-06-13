@@ -77,16 +77,27 @@
     "subtitle": "Your base system is live. Build anything from here.",
     "answer": "The answer is 42.",
     "cards": {
-      "secure": { "title": "Secure by default", "body": "JWT, 2FA, CSRF, rate-limit and audit logging included." },
+      "secure": {
+        "title": "Secure by default",
+        "body": "JWT, 2FA, CSRF, rate-limit and audit logging included."
+      },
       "i18n": { "title": "Multilingual", "body": "pt-BR and en-US ready — switch with the flag." },
-      "swappable": { "title": "Everything pluggable", "body": "Swap database, storage and email with one variable." }
+      "swappable": {
+        "title": "Everything pluggable",
+        "body": "Swap database, storage and email with one variable."
+      }
     }
   },
   "profile": {
     "title": "Profile",
     "subtitle": "Manage your account and security.",
     "tabs": { "general": "General", "security": "Security" },
-    "avatar": { "title": "Profile photo", "upload": "Upload image", "remove": "Remove", "hint": "PNG, JPG or WebP up to 5MB." },
+    "avatar": {
+      "title": "Profile photo",
+      "upload": "Upload image",
+      "remove": "Remove",
+      "hint": "PNG, JPG or WebP up to 5MB."
+    },
     "nameSection": { "title": "Name", "save": "Save name", "updated": "Name updated." },
     "passwordSection": {
       "title": "Change password",
@@ -120,13 +131,32 @@
     }
   },
   "errors": {
-    "notFound": { "title": "Page not found", "body": "This page got lost in hyperspace.", "home": "Back home" },
-    "serverError": { "title": "Something broke", "body": "Don't Panic. We're already on it.", "retry": "Try again" },
+    "notFound": {
+      "title": "Page not found",
+      "body": "This page got lost in hyperspace.",
+      "home": "Back home",
+      "marvin": "Marvin: “I’d look for it, but I’ve got this terrible pain in all the diodes down my left side.”"
+    },
+    "serverError": {
+      "title": "Something broke",
+      "body": "Don't Panic. We're already on it.",
+      "retry": "Try again",
+      "marvin": "Marvin: “Here I am, brain the size of a planet, and they ask me to handle a 500.”"
+    },
     "generic": "Something went wrong. Don't Panic."
+  },
+  "easter": {
+    "consoleTitle": "Don't Panic.",
+    "consoleSubtitle": "42 — the answer to life, the universe, and your next system. 🛸",
+    "konamiTitle": "🐬 So long, and thanks for all the fish.",
+    "konamiDescription": "Marvin: “Brain the size of a planet, and they ask me to render a toast.”"
   },
   "validation": {
     "required": "Required field",
     "email": "Invalid email",
-    "passwordWeak": "Min. 8 chars, with uppercase, lowercase and a number"
+    "passwordWeak": "Min. 8 chars, with uppercase, lowercase and a number",
+    "tooShort": "Too short (min. {min})",
+    "tooLong": "Too long (max. {max})",
+    "invalid": "Invalid value"
   }
 }

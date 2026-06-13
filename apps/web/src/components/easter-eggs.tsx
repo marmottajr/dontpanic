@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
 const KONAMI = [
@@ -18,29 +19,26 @@ const KONAMI = [
 
 /** Secret console greeting + Konami code. Mounted once on the dashboard. */
 export function EasterEggs() {
+  const t = useTranslations('easter');
+
   useEffect(() => {
     console.log(
-      "%cDon't Panic.",
+      `%c${t('consoleTitle')}`,
       'color:#34d399;font-size:30px;font-weight:800;font-family:monospace',
     );
-    console.log(
-      '%c42 — the answer to life, the universe, and your next system. 🛸',
-      'color:#fbbf24;font-family:monospace;font-size:13px',
-    );
+    console.log(`%c${t('consoleSubtitle')}`, 'color:#fbbf24;font-family:monospace;font-size:13px');
 
     let i = 0;
     function onKey(e: KeyboardEvent) {
       i = e.key === KONAMI[i] ? i + 1 : e.key === KONAMI[0] ? 1 : 0;
       if (i === KONAMI.length) {
         i = 0;
-        toast('🐬 So long, and thanks for all the fish.', {
-          description: 'Marvin: “Brain the size of a planet, and they ask me to render a toast.”',
-        });
+        toast(t('konamiTitle'), { description: t('konamiDescription') });
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [t]);
 
   return null;
 }

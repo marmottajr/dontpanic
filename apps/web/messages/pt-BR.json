@@ -77,16 +77,27 @@
     "subtitle": "Seu sistema-base está no ar. Construa qualquer coisa a partir daqui.",
     "answer": "A resposta é 42.",
     "cards": {
-      "secure": { "title": "Seguro por padrão", "body": "JWT, 2FA, CSRF, rate-limit e auditoria já inclusos." },
+      "secure": {
+        "title": "Seguro por padrão",
+        "body": "JWT, 2FA, CSRF, rate-limit e auditoria já inclusos."
+      },
       "i18n": { "title": "Multilíngue", "body": "pt-BR e en-US prontos, troque pela bandeira." },
-      "swappable": { "title": "Tudo plugável", "body": "Banco, storage e e-mail trocáveis por uma variável." }
+      "swappable": {
+        "title": "Tudo plugável",
+        "body": "Banco, storage e e-mail trocáveis por uma variável."
+      }
     }
   },
   "profile": {
     "title": "Perfil",
     "subtitle": "Gerencie sua conta e segurança.",
     "tabs": { "general": "Geral", "security": "Segurança" },
-    "avatar": { "title": "Foto de perfil", "upload": "Enviar imagem", "remove": "Remover", "hint": "PNG, JPG ou WebP até 5MB." },
+    "avatar": {
+      "title": "Foto de perfil",
+      "upload": "Enviar imagem",
+      "remove": "Remover",
+      "hint": "PNG, JPG ou WebP até 5MB."
+    },
     "nameSection": { "title": "Nome", "save": "Salvar nome", "updated": "Nome atualizado." },
     "passwordSection": {
       "title": "Alterar senha",
@@ -120,13 +131,32 @@
     }
   },
   "errors": {
-    "notFound": { "title": "Página não encontrada", "body": "Esta página se perdeu no hiperespaço.", "home": "Voltar ao início" },
-    "serverError": { "title": "Algo quebrou", "body": "Não entre em pânico. Já estamos resolvendo.", "retry": "Tentar de novo" },
+    "notFound": {
+      "title": "Página não encontrada",
+      "body": "Esta página se perdeu no hiperespaço.",
+      "home": "Voltar ao início",
+      "marvin": "Marvin: “Eu procuraria, mas estou com uma dor terrível em todos os diodos do meu lado esquerdo.”"
+    },
+    "serverError": {
+      "title": "Algo quebrou",
+      "body": "Não entre em pânico. Já estamos resolvendo.",
+      "retry": "Tentar de novo",
+      "marvin": "Marvin: “Aqui estou eu, cérebro do tamanho de um planeta, e me pedem para lidar com um erro 500.”"
+    },
     "generic": "Algo deu errado. Não entre em pânico."
+  },
+  "easter": {
+    "consoleTitle": "Não entre em pânico.",
+    "consoleSubtitle": "42 — a resposta para a vida, o universo e o seu próximo sistema. 🛸",
+    "konamiTitle": "🐬 Tchau, e obrigado pelos peixes.",
+    "konamiDescription": "Marvin: “Cérebro do tamanho de um planeta, e me pedem para renderizar um toast.”"
   },
   "validation": {
     "required": "Campo obrigatório",
     "email": "E-mail inválido",
-    "passwordWeak": "Mín. 8 caracteres, com maiúscula, minúscula e número"
+    "passwordWeak": "Mín. 8 caracteres, com maiúscula, minúscula e número",
+    "tooShort": "Curto demais (mín. {min})",
+    "tooLong": "Longo demais (máx. {max})",
+    "invalid": "Valor inválido"
   }
 }

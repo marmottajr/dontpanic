@@ -14,7 +14,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function LanguageSwitcher() {
+interface LanguageSwitcherProps {
+  /** Where the menu opens relative to the trigger. Pin it to avoid the Radix
+   *  collision flip flicker (e.g. `top` when the switcher sits in a footer). */
+  side?: 'top' | 'bottom' | 'left' | 'right';
+  align?: 'start' | 'center' | 'end';
+}
+
+export function LanguageSwitcher({ side = 'bottom', align = 'end' }: LanguageSwitcherProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -42,7 +49,7 @@ export function LanguageSwitcher() {
           <span className="font-mono text-xs">{current.short}</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent side={side} align={align} sideOffset={8}>
         {locales.map((l) => (
           <DropdownMenuItem key={l} onSelect={() => change(l)} className="gap-2.5">
             <FlagIcon locale={l} />

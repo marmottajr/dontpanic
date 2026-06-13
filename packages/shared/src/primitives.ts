@@ -9,10 +9,13 @@ import { z } from 'zod';
 export const emailSchema = z.string().email().max(255).toLowerCase();
 
 /** Password policy shared by register / reset / change-password. */
+// No hardcoded messages on purpose: the web app localises Zod errors via a
+// client error map (apps/web/src/lib/zod-error-map.ts). Schema-level messages
+// would override that map, so the policy text lives in the i18n catalogs.
 export const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(128, 'Password must be at most 128 characters')
-  .regex(/[a-z]/, 'Must contain a lowercase letter')
-  .regex(/[A-Z]/, 'Must contain an uppercase letter')
-  .regex(/[0-9]/, 'Must contain a number');
+  .min(8)
+  .max(128)
+  .regex(/[a-z]/)
+  .regex(/[A-Z]/)
+  .regex(/[0-9]/);

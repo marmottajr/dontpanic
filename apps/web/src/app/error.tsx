@@ -37,9 +37,7 @@ export default function Error({
           <p className="text-muted-foreground">{t('body')}</p>
         </div>
 
-        <p className="font-mono text-xs text-muted-foreground">
-          Marvin: “Here I am, brain the size of a planet, and they ask me to handle a 500.”
-        </p>
+        <p className="font-mono text-xs text-muted-foreground">{t('marvin')}</p>
 
         <Button size="lg" onClick={() => reset()}>
           {t('retry')}
