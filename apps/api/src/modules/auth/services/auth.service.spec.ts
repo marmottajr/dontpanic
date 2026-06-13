@@ -48,12 +48,10 @@ describe('AuthService', () => {
     };
     tokenService = {
       issueTokensForUser: jest.fn().mockResolvedValue({ accessToken: 'AT', refreshToken: 'RT' }),
-      issueTokensInFamily: jest
-        .fn()
-        .mockResolvedValue({
-          tokens: { accessToken: 'AT2', refreshToken: 'RT2' },
-          refreshTokenId: 'rt-new',
-        }),
+      issueTokensInFamily: jest.fn().mockResolvedValue({
+        tokens: { accessToken: 'AT2', refreshToken: 'RT2' },
+        refreshTokenId: 'rt-new',
+      }),
       revokeFamily: jest.fn().mockResolvedValue(undefined),
       revokeToken: jest.fn().mockResolvedValue(undefined),
       revokeAllForUser: jest.fn().mockResolvedValue(undefined),
@@ -82,6 +80,14 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValue(makeUser());
       await expect(service.register(input as never, ctx)).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('still registers when the verification email fails to dispatch (non-blocking)', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue(makeUser({ id: 'u-new', email: input.email }));
+      mail.send.mockRejectedValue(new Error('smtp down'));
+      await expect(service.register(input as never, ctx)).resolves.toBeDefined();
+      await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
     });
 
     it('hashes the password, creates the user, and sends a verification email', async () => {

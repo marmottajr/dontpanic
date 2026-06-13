@@ -106,6 +106,16 @@
       "hint": "PNG, JPG ou WebP até 5MB."
     },
     "nameSection": { "title": "Nome", "save": "Salvar nome", "updated": "Nome atualizado." },
+    "email": {
+      "title": "E-mail",
+      "change": "Alterar e-mail",
+      "newEmail": "Novo e-mail",
+      "sendCode": "Enviar código",
+      "code": "Código de verificação",
+      "enterCode": "Digite o código de 6 dígitos enviado para {email}.",
+      "codeSent": "Enviamos um código para o novo endereço.",
+      "changed": "E-mail atualizado."
+    },
     "passwordSection": {
       "title": "Alterar senha",
       "current": "Senha atual",

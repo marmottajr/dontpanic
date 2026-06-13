@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -12,6 +13,8 @@ import { randomUUID } from 'node:crypto';
 import type { User } from '@prisma/client';
 import type {
   ChangePasswordInput,
+  EmailChangeRequestInput,
+  EmailChangeVerifyInput,
   SessionDto,
   TwoFactorDisableInput,
   TwoFactorEnableInput,
@@ -25,18 +28,28 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
+import {
+  MAIL_PROVIDER,
+  type MailMessage,
+  type MailProvider,
+} from '../../../core/mail/mail.provider';
 import { TwoFactorService } from '../../auth/services/two-factor.service';
 import { TokenService } from '../../auth/services/token.service';
+import { generateNumericCode, sha256 } from '../../auth/support/crypto.util';
+import { verificationCodeEmail, type EmailLocale } from '../../auth/support/email-templates';
 import { toUserDto } from '../../auth/support/user.mapper';
 
-/** Context captured from the request for audit logging. */
+/** Context captured from the request for audit logging and email locale. */
 export interface RequestContext {
   ip?: string | null;
   userAgent?: string | null;
+  locale?: EmailLocale;
 }
 
 /** A pending 2FA secret lives in the cache only until the user enables it. */
 const PENDING_2FA_TTL = 10 * 60; // 10 minutes
+/** A pending email change (code + target address) lives in the cache for 15min. */
+const EMAIL_CHANGE_TTL = 15 * 60;
 
 @Injectable()
 export class UsersService {
@@ -48,7 +61,19 @@ export class UsersService {
     private readonly tokenService: TokenService,
     private readonly config: ConfigService<Env, true>,
     @Inject(CACHE_PROVIDER) private readonly cache: CacheProvider,
+    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
   ) {}
+
+  /**
+   * Send transactional mail WITHOUT blocking the request. A slow SMTP host must
+   * not slow the API response; failures are logged, not surfaced (resend flows
+   * exist). Swap this for a durable queue (e.g. BullMQ) behind the same call.
+   */
+  private dispatchMail(message: MailMessage): void {
+    void this.mail.send(message).catch((err) => {
+      this.logger.warn(`Mail dispatch failed (${message.subject}): ${String(err)}`);
+    });
+  }
 
   // --- profile -----------------------------------------------------------
 
@@ -254,6 +279,78 @@ export class UsersService {
     }
     await this.tokenService.revokeOtherFamilies(userId, currentFamilyId);
     await this.audit('user.sessions_revoked_others', userId, ctx, { keep: currentFamilyId });
+  }
+
+  // --- email change (by code, two steps) ---------------------------------
+
+  private emailChangeKey(userId: string): string {
+    return `email-change:${userId}`;
+  }
+
+  /** Step 1: verify the password, ensure the new address is free, email a code. */
+  async requestEmailChange(
+    userId: string,
+    input: EmailChangeRequestInput,
+    ctx: RequestContext,
+  ): Promise<void> {
+    const user = await this.requireActiveUser(userId);
+
+    const passwordOk = await argon2.verify(user.passwordHash, input.password);
+    if (!passwordOk) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const newEmail = input.newEmail.toLowerCase();
+    if (newEmail === user.email.toLowerCase()) {
+      throw new BadRequestException('That is already your email address');
+    }
+    const taken = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    if (taken && !taken.deletedAt) {
+      throw new ConflictException('That email is already in use');
+    }
+
+    const code = generateNumericCode(6);
+    await this.cache.set(
+      this.emailChangeKey(userId),
+      JSON.stringify({ newEmail, codeHash: sha256(code) }),
+      EMAIL_CHANGE_TTL,
+    );
+    const mail = verificationCodeEmail({ name: user.name, code, locale: ctx.locale ?? 'pt-BR' });
+    this.dispatchMail({ to: newEmail, subject: mail.subject, html: mail.html, text: mail.text });
+    await this.audit('user.email_change_requested', userId, ctx, { newEmail });
+  }
+
+  /** Step 2: confirm the code and switch the account over to the new address. */
+  async verifyEmailChange(
+    userId: string,
+    input: EmailChangeVerifyInput,
+    ctx: RequestContext,
+  ): Promise<{ message: string }> {
+    await this.requireActiveUser(userId);
+
+    const raw = await this.cache.get(this.emailChangeKey(userId));
+    if (!raw) {
+      throw new BadRequestException('No pending email change — start again');
+    }
+    const { newEmail, codeHash } = JSON.parse(raw) as { newEmail: string; codeHash: string };
+    if (sha256(input.code) !== codeHash) {
+      throw new BadRequestException('Invalid or expired code');
+    }
+
+    // Re-check the address is still free (someone could have taken it meanwhile).
+    const taken = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    if (taken && taken.id !== userId && !taken.deletedAt) {
+      throw new ConflictException('That email is already in use');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { email: newEmail, emailVerified: true },
+    });
+    await this.cache.del(this.emailChangeKey(userId));
+    await this.audit('user.email_changed', userId, ctx, { newEmail });
+
+    return { message: "Email updated. Don't Panic." };
   }
 
   // --- LGPD: access (export) & erasure (delete) --------------------------

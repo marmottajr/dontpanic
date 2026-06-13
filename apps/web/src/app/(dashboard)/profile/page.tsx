@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AvatarCard } from '@/components/profile/avatar-card';
 import { NameCard } from '@/components/profile/name-card';
+import { EmailCard } from '@/components/profile/email-card';
 import { PasswordCard } from '@/components/profile/password-card';
 import { TwoFactorCard } from '@/components/profile/two-factor-card';
 import { SessionsCard } from '@/components/profile/sessions-card';
@@ -49,6 +50,7 @@ export default function ProfilePage() {
           <TabsContent value="general" className="space-y-6">
             <AvatarCard user={user} />
             <NameCard user={user} />
+            <EmailCard user={user} />
           </TabsContent>
 
           <TabsContent value="security" className="space-y-6">

@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makeUser } from '../../../../test/factories';
+import { sha256 } from '../../auth/support/crypto.util';
 import { UsersService } from './users.service';
 
 jest.mock('argon2');
@@ -18,6 +20,7 @@ describe('UsersService', () => {
   let tokenService: any;
   let cache: any;
   let config: any;
+  let mail: any;
   let service: UsersService;
 
   const mockedArgon = argon2 as jest.Mocked<typeof argon2>;
@@ -61,7 +64,8 @@ describe('UsersService', () => {
     };
 
     config = { get: jest.fn().mockReturnValue(false) }; // 2FA optional by default
-    service = new UsersService(prisma, twoFactor, tokenService, config, cache);
+    mail = { send: jest.fn().mockResolvedValue(undefined) };
+    service = new UsersService(prisma, twoFactor, tokenService, config, cache, mail);
   });
 
   describe('getSecurityStatus', () => {
@@ -263,6 +267,110 @@ describe('UsersService', () => {
       await service.disableTwoFactor('u1', { password: 'pw' } as never, ctx);
       expect(mockedArgon.verify).toHaveBeenCalled();
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // --- email change ------------------------------------------------------
+
+  describe('requestEmailChange', () => {
+    const input = { newEmail: 'New@X.com', password: 'pw' };
+
+    it('emails a code when the password is right and the address is free', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' })) // requireActiveUser
+        .mockResolvedValueOnce(null); // new email is free
+      mockedArgon.verify.mockResolvedValue(true);
+      await service.requestEmailChange('u1', input as never, ctx);
+      expect(cache.set).toHaveBeenCalledWith(
+        'email-change:u1',
+        expect.stringContaining('new@x.com'),
+        expect.any(Number),
+      );
+      expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({ to: 'new@x.com' }));
+    });
+
+    it('rejects a wrong password', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' }));
+      mockedArgon.verify.mockResolvedValue(false);
+      await expect(service.requestEmailChange('u1', input as never, ctx)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(cache.set).not.toHaveBeenCalled();
+    });
+
+    it('rejects changing to the same address', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(makeUser({ id: 'u1', email: 'new@x.com' }));
+      mockedArgon.verify.mockResolvedValue(true);
+      await expect(service.requestEmailChange('u1', input as never, ctx)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('rejects an address already in use', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' }))
+        .mockResolvedValueOnce(makeUser({ id: 'u2', email: 'new@x.com' }));
+      mockedArgon.verify.mockResolvedValue(true);
+      await expect(service.requestEmailChange('u1', input as never, ctx)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('does not fail the request when mail dispatch rejects', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' }))
+        .mockResolvedValueOnce(null);
+      mockedArgon.verify.mockResolvedValue(true);
+      mail.send.mockRejectedValue(new Error('smtp down'));
+      await expect(service.requestEmailChange('u1', input as never, ctx)).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
+    });
+  });
+
+  describe('verifyEmailChange', () => {
+    it('switches the email when the code matches', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' }));
+      cache.get.mockResolvedValue(
+        JSON.stringify({ newEmail: 'new@x.com', codeHash: sha256('123456') }),
+      );
+      const res = await service.verifyEmailChange('u1', { code: '123456' } as never, ctx);
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { email: 'new@x.com', emailVerified: true },
+      });
+      expect(cache.del).toHaveBeenCalledWith('email-change:u1');
+      expect(res.message).toMatch(/updated/i);
+    });
+
+    it('rejects when there is no pending change', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      cache.get.mockResolvedValue(null);
+      await expect(
+        service.verifyEmailChange('u1', { code: '123456' } as never, ctx),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a wrong code', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(makeUser({ id: 'u1' }));
+      cache.get.mockResolvedValue(
+        JSON.stringify({ newEmail: 'new@x.com', codeHash: sha256('123456') }),
+      );
+      await expect(
+        service.verifyEmailChange('u1', { code: '000000' } as never, ctx),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the address was taken in the meantime', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(makeUser({ id: 'u1' })) // requireActiveUser
+        .mockResolvedValueOnce(makeUser({ id: 'u2', email: 'new@x.com' })); // taken by another
+      cache.get.mockResolvedValue(
+        JSON.stringify({ newEmail: 'new@x.com', codeHash: sha256('123456') }),
+      );
+      await expect(
+        service.verifyEmailChange('u1', { code: '123456' } as never, ctx),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

@@ -26,10 +26,14 @@ import { SkipTwoFactorGate } from '../../common/decorators/skip-two-factor-gate.
 import { UsersService, type RequestContext } from './services/users.service';
 import {
   ChangePasswordDto,
+  EmailChangeRequestDto,
+  EmailChangeVerifyDto,
   TwoFactorDisableDto,
   TwoFactorEnableDto,
   UpdateProfileDto,
 } from './dto/users.dto';
+
+type ReqWithCookies = FastifyRequest & { cookies?: Record<string, string> };
 
 /**
  * Self-service profile, credentials, 2FA management and LGPD data rights.
@@ -43,7 +47,9 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   private ctx(req: FastifyRequest): RequestContext {
-    return { ip: req.ip, userAgent: req.headers['user-agent'] ?? null };
+    const cookies = (req as ReqWithCookies).cookies;
+    const locale = cookies?.['NEXT_LOCALE'] === 'en-US' ? 'en' : 'pt-BR';
+    return { ip: req.ip, userAgent: req.headers['user-agent'] ?? null, locale };
   }
 
   @Get('me')
@@ -118,6 +124,29 @@ export class UsersController {
   ): Promise<MessageResponse> {
     await this.users.disableTwoFactor(user.id, dto, this.ctx(req));
     return { message: 'Two-factor authentication disabled.' };
+  }
+
+  @Post('me/email/change-request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request an email change: emails a 6-digit code to the new address' })
+  async requestEmailChange(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: EmailChangeRequestDto,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    await this.users.requestEmailChange(user.id, dto, this.ctx(req));
+    return { message: 'If the address is available, a code is on its way.' };
+  }
+
+  @Post('me/email/change-verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm an email change with the code sent to the new address' })
+  async verifyEmailChange(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: EmailChangeVerifyDto,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    return this.users.verifyEmailChange(user.id, dto, this.ctx(req));
   }
 
   @Get('me/sessions')

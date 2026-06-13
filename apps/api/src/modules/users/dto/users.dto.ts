@@ -2,6 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import {
   updateProfileSchema,
   changePasswordSchema,
+  emailChangeRequestSchema,
+  emailChangeVerifySchema,
   twoFactorEnableSchema,
   twoFactorDisableSchema,
 } from '@dontpanic/shared';
@@ -13,5 +15,7 @@ import {
  */
 export class UpdateProfileDto extends createZodDto(updateProfileSchema) {}
 export class ChangePasswordDto extends createZodDto(changePasswordSchema) {}
+export class EmailChangeRequestDto extends createZodDto(emailChangeRequestSchema) {}
+export class EmailChangeVerifyDto extends createZodDto(emailChangeVerifySchema) {}
 export class TwoFactorEnableDto extends createZodDto(twoFactorEnableSchema) {}
 export class TwoFactorDisableDto extends createZodDto(twoFactorDisableSchema) {}

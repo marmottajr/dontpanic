@@ -37,6 +37,19 @@ export const changePasswordSchema = z.object({
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+/** Step 1 of changing the account email: prove the password, name the new email. */
+export const emailChangeRequestSchema = z.object({
+  newEmail: z.string().email(),
+  password: z.string().min(1).max(128),
+});
+export type EmailChangeRequestInput = z.infer<typeof emailChangeRequestSchema>;
+
+/** Step 2: confirm the 6-digit code sent to the new address. */
+export const emailChangeVerifySchema = z.object({
+  code: z.string().min(4).max(8),
+});
+export type EmailChangeVerifyInput = z.infer<typeof emailChangeVerifySchema>;
+
 /** Returned after an avatar is uploaded or deleted (null when removed). */
 export const avatarResponseSchema = z.object({
   avatarUrl: z.string().url().nullable(),

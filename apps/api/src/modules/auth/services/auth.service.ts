@@ -20,7 +20,11 @@ import type {
 import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
-import { MAIL_PROVIDER, type MailProvider } from '../../../core/mail/mail.provider';
+import {
+  MAIL_PROVIDER,
+  type MailMessage,
+  type MailProvider,
+} from '../../../core/mail/mail.provider';
 import { TokenService, type IssuedTokens } from './token.service';
 import { TwoFactorService } from './two-factor.service';
 import { generateNumericCode, generateRawToken, sha256 } from '../support/crypto.util';
@@ -66,6 +70,17 @@ export class AuthService {
     @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
   ) {}
 
+  /**
+   * Send transactional mail WITHOUT blocking the request — a slow SMTP host must
+   * not slow auth responses. Failures are logged, not surfaced (resend/forgot
+   * flows recover). A durable queue (BullMQ) can later slot in behind this call.
+   */
+  private dispatchMail(message: MailMessage): void {
+    void this.mail.send(message).catch((err) => {
+      this.logger.warn(`Mail dispatch failed (${message.subject}): ${String(err)}`);
+    });
+  }
+
   // --- registration & e-mail verification -------------------------------
 
   async register(input: RegisterInput, ctx: RequestContext): Promise<UserDto> {
@@ -105,7 +120,7 @@ export class AuthService {
     });
     await this.cache.del(this.verifyAttemptsKey(email));
     const mail = verificationCodeEmail({ name, code, locale });
-    await this.mail.send({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
+    this.dispatchMail({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
   }
 
   private verifyAttemptsKey(email: string): string {
@@ -425,7 +440,7 @@ export class AuthService {
       },
     });
     const link = `${this.config.get('WEB_ORIGIN', { infer: true })}/reset-password?token=${raw}`;
-    await this.mail.send({
+    this.dispatchMail({
       to: user.email,
       subject: 'Reset your password — DontPanic',
       html: `<p>Don't Panic. Someone (hopefully you) asked to reset your password.</p><p><a href="${link}">Choose a new password</a></p><p>This link expires in 1 hour. If it wasn't you, ignore this email.</p>`,
