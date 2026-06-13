@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { User } from '@prisma/client';
 import type {
   ChangePasswordInput,
+  SessionDto,
   TwoFactorDisableInput,
   TwoFactorEnableInput,
   TwoFactorSetupResponse,
@@ -192,6 +193,67 @@ export class UsersService {
     ]);
     await this.cache.del(this.pendingSecretKey(userId));
     await this.audit('user.2fa_disabled', userId, ctx);
+  }
+
+  // --- active sessions (refresh-token rotation families) -----------------
+
+  /** List active sessions, one per rotation family, marking the current one. */
+  async listSessions(userId: string, currentFamilyId?: string): Promise<SessionDto[]> {
+    await this.requireActiveUser(userId);
+    const tokens = await this.prisma.refreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const byFamily = new Map<string, typeof tokens>();
+    for (const token of tokens) {
+      const list = byFamily.get(token.familyId);
+      if (list) list.push(token);
+      else byFamily.set(token.familyId, [token]);
+    }
+
+    const sessions = [...byFamily.entries()].map(([familyId, list]) => {
+      const newest = list[0]; // createdAt desc → newest first
+      const oldest = list[list.length - 1];
+      return {
+        id: familyId,
+        current: familyId === currentFamilyId,
+        ip: newest.ip,
+        userAgent: newest.userAgent,
+        createdAt: oldest.createdAt.toISOString(),
+        lastUsedAt: newest.createdAt.toISOString(),
+      };
+    });
+
+    // Current session first, then most-recently-used.
+    return sessions.sort((a, b) =>
+      a.current === b.current ? b.lastUsedAt.localeCompare(a.lastUsedAt) : a.current ? -1 : 1,
+    );
+  }
+
+  /** Revoke one session (rotation family). Verifies it belongs to the caller. */
+  async revokeSession(userId: string, familyId: string, ctx: RequestContext): Promise<void> {
+    await this.requireActiveUser(userId);
+    const owned = await this.prisma.refreshToken.findFirst({ where: { userId, familyId } });
+    if (!owned) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.tokenService.revokeFamily(familyId);
+    await this.audit('user.session_revoked', userId, ctx, { familyId });
+  }
+
+  /** Sign out everywhere else — revoke every family but the current one. */
+  async revokeOtherSessions(
+    userId: string,
+    currentFamilyId: string | undefined,
+    ctx: RequestContext,
+  ): Promise<void> {
+    await this.requireActiveUser(userId);
+    if (!currentFamilyId) {
+      throw new BadRequestException('Cannot identify the current session');
+    }
+    await this.tokenService.revokeOtherFamilies(userId, currentFamilyId);
+    await this.audit('user.sessions_revoked_others', userId, ctx, { keep: currentFamilyId });
   }
 
   // --- LGPD: access (export) & erasure (delete) --------------------------

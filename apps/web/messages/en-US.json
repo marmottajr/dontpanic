@@ -126,6 +126,18 @@
       "enabledToast": "2FA enabled!",
       "disabledToast": "2FA disabled."
     },
+    "sessions": {
+      "title": "Active sessions",
+      "subtitle": "Devices connected to your account.",
+      "current": "Current",
+      "unknownDevice": "Unknown device",
+      "revoke": "Revoke",
+      "revokeOthers": "Sign out everywhere else",
+      "revokeOthersConfirm": "This ends all your other sessions. You'll stay signed in on this device.",
+      "revoked": "Session revoked.",
+      "revokedOthers": "Signed out of all other devices.",
+      "empty": "No active sessions."
+    },
     "danger": {
       "title": "Danger zone",
       "exportTitle": "Export my data",

@@ -33,6 +33,10 @@ describe('UsersService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       twoFactorBackupCode: { deleteMany: jest.fn() },
+      refreshToken: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn().mockResolvedValue([]),
     };
     twoFactor = {
@@ -45,7 +49,11 @@ describe('UsersService', () => {
         .mockResolvedValue({ raw: ['code-1', 'code-2'], hashes: ['h1', 'h2'] }),
       replaceBackupCodes: jest.fn().mockResolvedValue(undefined),
     };
-    tokenService = { revokeAllForUser: jest.fn().mockResolvedValue(undefined) };
+    tokenService = {
+      revokeAllForUser: jest.fn().mockResolvedValue(undefined),
+      revokeFamily: jest.fn().mockResolvedValue(undefined),
+      revokeOtherFamilies: jest.fn().mockResolvedValue(undefined),
+    };
     cache = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(undefined),
@@ -255,6 +263,76 @@ describe('UsersService', () => {
       await service.disableTwoFactor('u1', { password: 'pw' } as never, ctx);
       expect(mockedArgon.verify).toHaveBeenCalled();
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // --- active sessions ---------------------------------------------------
+
+  describe('listSessions', () => {
+    it('groups refresh tokens by family, marks the current one and sorts it first', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      prisma.refreshToken.findMany.mockResolvedValue([
+        {
+          familyId: 'fam-A',
+          ip: '1.1.1.1',
+          userAgent: 'Chrome',
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        },
+        {
+          familyId: 'fam-A',
+          ip: '1.1.1.1',
+          userAgent: 'Chrome',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+        {
+          familyId: 'fam-B',
+          ip: '2.2.2.2',
+          userAgent: 'Firefox',
+          createdAt: new Date('2026-01-03T00:00:00Z'),
+        },
+      ]);
+
+      const sessions = await service.listSessions('u1', 'fam-B');
+
+      expect(sessions).toHaveLength(2);
+      expect(sessions[0]).toMatchObject({ id: 'fam-B', current: true });
+      const famA = sessions.find((s) => s.id === 'fam-A');
+      expect(famA?.current).toBe(false);
+      expect(famA?.createdAt).toBe(new Date('2026-01-01T00:00:00Z').toISOString());
+      expect(famA?.lastUsedAt).toBe(new Date('2026-01-02T00:00:00Z').toISOString());
+    });
+  });
+
+  describe('revokeSession', () => {
+    it('revokes a family that belongs to the caller', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      prisma.refreshToken.findFirst.mockResolvedValue({ id: 'rt1', familyId: 'fam-A' });
+      await service.revokeSession('u1', 'fam-A', ctx);
+      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-A');
+    });
+
+    it('throws NotFound for a session that is not the caller’s', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      prisma.refreshToken.findFirst.mockResolvedValue(null);
+      await expect(service.revokeSession('u1', 'ghost', ctx)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(tokenService.revokeFamily).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('revokeOtherSessions', () => {
+    it('revokes every family but the current one', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      await service.revokeOtherSessions('u1', 'fam-current', ctx);
+      expect(tokenService.revokeOtherFamilies).toHaveBeenCalledWith('u1', 'fam-current');
+    });
+
+    it('throws when the current session cannot be identified', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      await expect(service.revokeOtherSessions('u1', undefined, ctx)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 

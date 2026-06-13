@@ -43,6 +43,20 @@ export const avatarResponseSchema = z.object({
 });
 export type AvatarResponse = z.infer<typeof avatarResponseSchema>;
 
+/** One active session — a refresh-token rotation family — for the sessions UI. */
+export const sessionDtoSchema = z.object({
+  id: z.string(), // the rotation familyId
+  current: z.boolean(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  createdAt: z.string(),
+  lastUsedAt: z.string(),
+});
+export type SessionDto = z.infer<typeof sessionDtoSchema>;
+
+export const sessionListSchema = z.array(sessionDtoSchema);
+export type SessionList = z.infer<typeof sessionListSchema>;
+
 /** A single audit-log entry as exposed to the data subject (LGPD export). */
 export const auditLogEntrySchema = z.object({
   id: z.string(),

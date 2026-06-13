@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
@@ -40,7 +35,12 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = this.tokenService.verifyAccessToken(token);
-      request.user = { id: payload.sub, email: payload.email, role: payload.role };
+      request.user = {
+        id: payload.sub,
+        email: payload.email,
+        role: payload.role,
+        fam: payload.fam,
+      };
       return true;
     } catch {
       // Expired or tampered token — say nothing useful to an attacker.

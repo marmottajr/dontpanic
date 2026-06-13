@@ -9,6 +9,7 @@ import { AvatarCard } from '@/components/profile/avatar-card';
 import { NameCard } from '@/components/profile/name-card';
 import { PasswordCard } from '@/components/profile/password-card';
 import { TwoFactorCard } from '@/components/profile/two-factor-card';
+import { SessionsCard } from '@/components/profile/sessions-card';
 import { DangerCard } from '@/components/profile/danger-card';
 
 function ProfileSkeleton() {
@@ -54,6 +55,8 @@ export default function ProfilePage() {
             <PasswordCard />
             <Separator />
             <TwoFactorCard user={user} />
+            <Separator />
+            <SessionsCard />
             <Separator />
             <DangerCard />
           </TabsContent>

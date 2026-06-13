@@ -12,6 +12,8 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   role: Role;
+  /** Rotation family of the session this token belongs to (for session mgmt). */
+  fam?: string;
 }
 
 export interface IssuedTokens {
@@ -93,6 +95,7 @@ export class TokenService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      fam: familyId,
     });
 
     const refreshToken = generateRawToken();
@@ -131,6 +134,14 @@ export class TokenService {
   async revokeAllForUser(userId: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /** Revoke every family EXCEPT the caller's current one ("sign out everywhere else"). */
+  async revokeOtherFamilies(userId: string, keepFamilyId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null, NOT: { familyId: keepFamilyId } },
       data: { revokedAt: new Date() },
     });
   }

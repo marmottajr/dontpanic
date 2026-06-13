@@ -5,6 +5,8 @@ export interface AuthUser {
   id: string;
   email: string;
   role: 'ADMIN' | 'USER';
+  /** Rotation family of the current session (from the access token's `fam`). */
+  fam?: string;
 }
 
 /** Injects the authenticated user (populated by JwtAuthGuard). */

@@ -38,7 +38,9 @@ describe('TokenService', () => {
     };
     prisma = {
       refreshToken: {
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'rt-1', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'rt-1', ...data })),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -106,11 +108,7 @@ describe('TokenService', () => {
 
   describe('issueTokensInFamily (rotation)', () => {
     it('keeps the supplied familyId and returns the new row id', async () => {
-      const { tokens, refreshTokenId } = await service.issueTokensInFamily(
-        user,
-        'family-xyz',
-        {},
-      );
+      const { tokens, refreshTokenId } = await service.issueTokensInFamily(user, 'family-xyz', {});
       expect(refreshTokenId).toBe('rt-1');
       expect(tokens.accessToken).toBe('signed.jwt');
       expect(prisma.refreshToken.create.mock.calls[0][0].data.familyId).toBe('family-xyz');
@@ -143,6 +141,14 @@ describe('TokenService', () => {
       await service.revokeAllForUser('u1');
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it('revokeOtherFamilies revokes every active token except the kept family', async () => {
+      await service.revokeOtherFamilies('u1', 'fam-keep');
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null, NOT: { familyId: 'fam-keep' } },
         data: { revokedAt: expect.any(Date) },
       });
     });

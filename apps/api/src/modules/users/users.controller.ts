@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Patch,
   Post,
   Req,
@@ -14,6 +15,7 @@ import type { FastifyRequest } from 'fastify';
 import type {
   MessageResponse,
   SecurityStatus,
+  SessionDto,
   TwoFactorEnableResponse,
   TwoFactorSetupResponse,
   UserDataExport,
@@ -116,6 +118,35 @@ export class UsersController {
   ): Promise<MessageResponse> {
     await this.users.disableTwoFactor(user.id, dto, this.ctx(req));
     return { message: 'Two-factor authentication disabled.' };
+  }
+
+  @Get('me/sessions')
+  @ApiOperation({ summary: 'List active sessions (devices) for the current user' })
+  async sessions(@CurrentUser() user: AuthUser): Promise<SessionDto[]> {
+    return this.users.listSessions(user.id, user.fam);
+  }
+
+  @Delete('me/sessions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke a specific session by id' })
+  async revokeSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    await this.users.revokeSession(user.id, id, this.ctx(req));
+    return { message: 'Session revoked.' };
+  }
+
+  @Post('me/sessions/revoke-others')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign out of all other sessions, keeping the current one' })
+  async revokeOtherSessions(
+    @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    await this.users.revokeOtherSessions(user.id, user.fam, this.ctx(req));
+    return { message: "Signed out everywhere else. Don't Panic." };
   }
 
   @Get('me/export')
