@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/marmottajr/dontpanic/security/advisories/new
+    about: Please report security issues privately, not as public issues.
+  - name: 💬 Questions & discussion
+    url: https://github.com/marmottajr/dontpanic/discussions
+    about: Ask questions and share ideas here.
