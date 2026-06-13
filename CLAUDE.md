@@ -20,8 +20,9 @@ pnpm --filter @dontpanic/api db:seed        # usuário admin inicial
 pnpm dev                       # API :3001  ·  Web :3000
 ```
 
-Serviços de dev: API `http://localhost:3001` · Web `http://localhost:3000` ·
-Swagger `:3001/docs` · Mailpit `:8025` · MinIO console `:9001`.
+Serviços de dev (portas no range **42xx**): Web `:4200` · API `:4201` ·
+Swagger `:4201/docs` · Postgres `:4202` · Redis `:4203` · MinIO `:4204` /
+console `:4205` · Mailpit SMTP `:4206` / UI `:4207` · Storybook `:4208`.
 
 ---
 

@@ -29,11 +29,11 @@ pnpm dev
 
 | Service | URL |
 |---|---|
-| Web | http://localhost:3000 |
-| API | http://localhost:3001 |
-| API docs (Swagger) | http://localhost:3001/docs |
-| Mailpit (e-mails de dev) | http://localhost:8025 |
-| MinIO console | http://localhost:9001 |
+| Web | http://localhost:4200 |
+| API | http://localhost:4201 |
+| API docs (Swagger) | http://localhost:4201/docs |
+| Mailpit (e-mails de dev) | http://localhost:4207 |
+| MinIO console | http://localhost:4205 |
 
 ## Architecture
 

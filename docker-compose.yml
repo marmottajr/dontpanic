@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: dontpanic
       POSTGRES_DB: dontpanic
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-4202}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-4203}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -41,8 +41,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_PORT:-4204}:9000"
+      - "${MINIO_CONSOLE_PORT:-4205}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -71,8 +71,8 @@ services:
     container_name: dontpanic-mailpit
     restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "${MAILPIT_SMTP_PORT:-4206}:1025"
+      - "${MAILPIT_UI_PORT:-4207}:8025"
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
