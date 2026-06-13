@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Query,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type {
@@ -25,8 +15,10 @@ import {
   ForgotPasswordDto,
   LoginDto,
   RegisterDto,
+  ResendVerificationDto,
   ResetPasswordDto,
   TwoFactorVerifyDto,
+  VerifyEmailDto,
 } from './dto/auth.dto';
 
 type ReqWithCookies = FastifyRequest & { cookies?: Record<string, string> };
@@ -40,21 +32,38 @@ export class AuthController {
   ) {}
 
   private ctx(req: FastifyRequest): RequestContext {
-    return { ip: req.ip, userAgent: req.headers['user-agent'] ?? null };
+    const cookies = (req as ReqWithCookies).cookies;
+    const locale = cookies?.['NEXT_LOCALE'] === 'en-US' ? 'en' : 'pt-BR';
+    return { ip: req.ip, userAgent: req.headers['user-agent'] ?? null, locale };
   }
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Create an account and send an email-verification link' })
+  @ApiOperation({ summary: 'Create an account and email a verification code' })
   async register(@Body() dto: RegisterDto, @Req() req: FastifyRequest): Promise<UserDto> {
     return this.auth.register(dto, this.ctx(req));
   }
 
   @Public()
-  @Get('verify-email')
-  @ApiOperation({ summary: 'Confirm an email address via the verification token' })
-  async verifyEmail(@Query('token') token: string): Promise<MessageResponse> {
-    return this.auth.verifyEmail(token ?? '');
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm an email address with the 6-digit code' })
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    return this.auth.verifyEmail(dto.email, dto.code, this.ctx(req));
+  }
+
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend the email-verification code' })
+  async resendVerification(
+    @Body() dto: ResendVerificationDto,
+    @Req() req: FastifyRequest,
+  ): Promise<MessageResponse> {
+    return this.auth.resendVerification(dto.email, this.ctx(req));
   }
 
   @Public()

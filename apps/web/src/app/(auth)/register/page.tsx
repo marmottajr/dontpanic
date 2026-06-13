@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Link from 'next/link';
-import { CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { registerSchema, type RegisterInput } from '@dontpanic/shared';
@@ -21,7 +22,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Alert, AlertTitle } from '@/components/ui/alert';
 
 export default function RegisterPage() {
   const t = useTranslations('auth.register');
@@ -30,8 +30,8 @@ export default function RegisterPage() {
   const tv = useTranslations('validation');
   const registerMutation = useRegister();
 
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
-  const [done, setDone] = useState(false);
 
   const {
     register,
@@ -45,35 +45,12 @@ export default function RegisterPage() {
   const onSubmit = handleSubmit(async (values) => {
     try {
       await registerMutation.mutateAsync(values);
-      setDone(true);
+      // Account created — go enter the verification code we just emailed.
+      router.push(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch {
       toast.error(tErr('generic'));
     }
   });
-
-  if (done) {
-    return (
-      <Card className="animate-in fade-in zoom-in-95 duration-300">
-        <CardHeader className="items-center gap-3 text-center">
-          <span className="flex size-11 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
-            <CheckCircle2 className="size-5" />
-          </span>
-          <CardTitle>{t('title')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Alert variant="success">
-            <CheckCircle2 className="size-4" />
-            <AlertTitle>{t('success')}</AlertTitle>
-          </Alert>
-        </CardContent>
-        <CardFooter>
-          <Button asChild variant="outline" className="w-full">
-            <Link href="/login">{t('signin')}</Link>
-          </Button>
-        </CardFooter>
-      </Card>
-    );
-  }
 
   return (
     <Card className="animate-in fade-in zoom-in-95 duration-300">

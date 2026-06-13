@@ -65,9 +65,16 @@
       "invalidToken": "Invalid or expired link."
     },
     "verify": {
-      "title": "Verifying your email",
+      "title": "Confirm your email",
+      "subtitle": "We sent a 6-digit code to {email}.",
+      "codeLabel": "Verification code",
+      "submit": "Confirm",
       "success": "Email verified successfully!",
-      "error": "Couldn't verify. The link may have expired.",
+      "error": "Invalid or expired code.",
+      "resend": "Didn't get it? Resend code",
+      "resent": "A new code is on its way.",
+      "resendCooldown": "Resend in {seconds}s",
+      "noEmail": "Missing email address. Please sign up again.",
       "goToLogin": "Go to login"
     }
   },

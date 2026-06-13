@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { generateRawToken, sha256 } from './crypto.util';
+import { generateNumericCode, generateRawToken, sha256 } from './crypto.util';
 
 describe('crypto.util', () => {
   describe('generateRawToken', () => {
@@ -41,6 +41,22 @@ describe('crypto.util', () => {
 
     it('differs for different inputs (avalanche)', () => {
       expect(sha256('a')).not.toBe(sha256('b'));
+    });
+  });
+
+  describe('generateNumericCode', () => {
+    it('defaults to 6 digits', () => {
+      expect(generateNumericCode()).toMatch(/^\d{6}$/);
+    });
+
+    it('honours a custom length and zero-pads', () => {
+      const codes = Array.from({ length: 50 }, () => generateNumericCode(8));
+      expect(codes.every((c) => /^\d{8}$/.test(c))).toBe(true);
+    });
+
+    it('varies across calls', () => {
+      const set = new Set(Array.from({ length: 100 }, () => generateNumericCode()));
+      expect(set.size).toBeGreaterThan(1);
     });
   });
 });

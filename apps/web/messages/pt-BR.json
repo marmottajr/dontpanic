@@ -65,9 +65,16 @@
       "invalidToken": "Link inválido ou expirado."
     },
     "verify": {
-      "title": "Verificando seu e-mail",
+      "title": "Confirme seu e-mail",
+      "subtitle": "Enviamos um código de 6 dígitos para {email}.",
+      "codeLabel": "Código de verificação",
+      "submit": "Confirmar",
       "success": "E-mail verificado com sucesso!",
-      "error": "Não foi possível verificar. O link pode ter expirado.",
+      "error": "Código inválido ou expirado.",
+      "resend": "Não recebeu? Reenviar código",
+      "resent": "Novo código enviado.",
+      "resendCooldown": "Reenviar em {seconds}s",
+      "noEmail": "Endereço de e-mail ausente. Faça o cadastro novamente.",
       "goToLogin": "Ir para o login"
     }
   },

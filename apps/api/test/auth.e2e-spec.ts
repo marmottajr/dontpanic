@@ -52,9 +52,10 @@ describe('Auth & Users (e2e)', () => {
     expect(reg.status).toBe(201);
     const userId = reg.body.id as string;
 
-    // Pull the verification token straight from the DB (mail is console driver).
-    const token = await rawEmailVerifyToken(userId);
-    const verify = await client.get(`/api/auth/verify-email?token=${token}`);
+    // The raw code isn't persisted (only its hash) and the console mail driver
+    // doesn't surface it — so force a known code onto the DB row, then verify.
+    const code = await forceVerificationCode(userId);
+    const verify = await client.post('/api/auth/verify-email', { email, code });
     expect(verify.status).toBe(200);
 
     const login = await client.post('/api/auth/login', { email, password });
@@ -67,30 +68,23 @@ describe('Auth & Users (e2e)', () => {
   }
 
   /**
-   * The raw email-verification token is never persisted (only its sha256 hash
-   * is). The service builds `sha256(raw)`; to drive verify-email in a test we
-   * reproduce the same hashing and brute-search would be silly — instead we
-   * recompute by intercepting: the simplest deterministic path is to read the
-   * single token row and re-derive nothing. Because we can't reverse sha256, we
-   * instead generate the raw token ourselves is impossible — so we mint a known
-   * token row directly. We do that by replacing the stored hash with the hash of
-   * a token WE choose, keeping the flow honest end-to-end through verify-email.
+   * The raw verification code isn't persisted (only its sha256 hash is) and the
+   * console mail driver doesn't surface it — so we mint a code we know: overwrite
+   * the stored hash with sha256 of a fixed code, then drive verify-email with it.
    */
-  async function rawEmailVerifyToken(userId: string): Promise<string> {
+  async function forceVerificationCode(userId: string): Promise<string> {
     const { sha256 } = await import('../src/modules/auth/support/crypto.util');
-    const raw = `e2e-verify-${userId}-token`;
+    const code = '123456';
     const record = await prisma.emailVerificationToken.findFirst({
       where: { userId, usedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     if (!record) throw new Error('no email verification token row created by register');
-    // Swap in the hash of a token we know the plaintext of — exercises the real
-    // verify-email lookup (findUnique by tokenHash) and the used/expiry checks.
     await prisma.emailVerificationToken.update({
       where: { id: record.id },
-      data: { tokenHash: sha256(raw) },
+      data: { tokenHash: sha256(code) },
     });
-    return raw;
+    return code;
   }
 
   async function rawPasswordResetToken(userId: string): Promise<string> {
@@ -265,9 +259,12 @@ describe('Auth & Users (e2e)', () => {
   // Email verification edge cases.
   // ---------------------------------------------------------------------------
 
-  it('rejects an invalid email-verification token (400)', async () => {
+  it('rejects an invalid email-verification code (400)', async () => {
     const client = await newClient();
-    const res = await client.get('/api/auth/verify-email?token=this-token-does-not-exist');
+    const res = await client.post('/api/auth/verify-email', {
+      email: 'nobody@dontpanic.test',
+      code: '000000',
+    });
     expect(res.status).toBe(400);
   });
 

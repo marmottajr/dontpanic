@@ -23,13 +23,15 @@ import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.pr
 import { MAIL_PROVIDER, type MailProvider } from '../../../core/mail/mail.provider';
 import { TokenService, type IssuedTokens } from './token.service';
 import { TwoFactorService } from './two-factor.service';
-import { generateRawToken, sha256 } from '../support/crypto.util';
+import { generateNumericCode, generateRawToken, sha256 } from '../support/crypto.util';
+import { verificationCodeEmail, type EmailLocale } from '../support/email-templates';
 import { toUserDto } from '../support/user.mapper';
 
 /** Context captured from the request for audit logging and token binding. */
 export interface RequestContext {
   ip?: string | null;
   userAgent?: string | null;
+  locale?: EmailLocale;
 }
 
 /** Result of login: either tokens to set as cookies, or a 2FA challenge. */
@@ -37,7 +39,9 @@ export type LoginResult =
   | { kind: 'tokens'; user: UserDto; tokens: IssuedTokens }
   | { kind: 'challenge'; challenge: TwoFactorChallenge };
 
-const EMAIL_VERIFY_TTL = 60 * 60 * 24; // 24h
+const EMAIL_VERIFY_TTL = 15 * 60; // 15min — verification-code lifetime
+const EMAIL_VERIFY_MAX_ATTEMPTS = 5; // wrong codes before the code is invalidated
+const EMAIL_RESEND_COOLDOWN = 60; // 1min between resend requests
 const PASSWORD_RESET_TTL = 60 * 60; // 1h
 const LOGIN_TICKET_TTL = 5 * 60; // 5min for the 2FA second step
 const TWO_FACTOR_MAX_ATTEMPTS = 5; // failed 2FA codes before the ticket is burned
@@ -77,49 +81,97 @@ export class AuthService {
       data: { email: input.email, passwordHash, name: input.name },
     });
 
-    await this.sendEmailVerification(user.id, user.email);
+    await this.sendVerificationCode(user.id, user.email, user.name, ctx.locale ?? 'pt-BR');
     await this.audit('auth.register', user.id, ctx, { email: user.email });
 
     return toUserDto(user);
   }
 
-  private async sendEmailVerification(userId: string, email: string): Promise<void> {
-    const raw = generateRawToken();
+  private async sendVerificationCode(
+    userId: string,
+    email: string,
+    name: string,
+    locale: EmailLocale,
+  ): Promise<void> {
+    // One active code per user.
+    await this.prisma.emailVerificationToken.deleteMany({ where: { userId } });
+    const code = generateNumericCode(6);
     await this.prisma.emailVerificationToken.create({
       data: {
         userId,
-        tokenHash: sha256(raw),
+        tokenHash: sha256(code),
         expiresAt: new Date(Date.now() + EMAIL_VERIFY_TTL * 1000),
       },
     });
-    const link = `${this.config.get('WEB_ORIGIN', { infer: true })}/verify-email?token=${raw}`;
-    await this.mail.send({
-      to: email,
-      subject: 'Verify your email — DontPanic',
-      html: `<p>Welcome aboard. Don't Panic.</p><p>Confirm your email address by clicking the link below:</p><p><a href="${link}">Verify my email</a></p><p>This link expires in 24 hours.</p>`,
-      text: `Welcome aboard. Don't Panic. Verify your email: ${link} (expires in 24 hours).`,
-    });
+    await this.cache.del(this.verifyAttemptsKey(email));
+    const mail = verificationCodeEmail({ name, code, locale });
+    await this.mail.send({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
   }
 
-  async verifyEmail(rawToken: string): Promise<{ message: string }> {
-    const tokenHash = sha256(rawToken);
-    const record = await this.prisma.emailVerificationToken.findUnique({ where: { tokenHash } });
-    if (!record || record.usedAt || record.expiresAt < new Date()) {
-      throw new BadRequestException('Invalid or expired verification token');
+  private verifyAttemptsKey(email: string): string {
+    return `email-verify:attempts:${email}`;
+  }
+
+  async verifyEmail(
+    email: string,
+    code: string,
+    ctx: RequestContext,
+  ): Promise<{ message: string }> {
+    const invalid = (): never => {
+      throw new BadRequestException('Invalid or expired code');
+    };
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.deletedAt) return invalid();
+    if (user.emailVerified) return { message: "Already verified. Don't Panic." };
+
+    const attemptsKey = this.verifyAttemptsKey(email);
+    const attempts = Number((await this.cache.get(attemptsKey)) ?? '0');
+    if (attempts >= EMAIL_VERIFY_MAX_ATTEMPTS) {
+      await this.prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } });
+      throw new BadRequestException('Too many attempts — request a new code');
+    }
+
+    const record = await this.prisma.emailVerificationToken.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      !record ||
+      record.usedAt ||
+      record.expiresAt < new Date() ||
+      record.tokenHash !== sha256(code)
+    ) {
+      await this.cache.incr(attemptsKey, EMAIL_VERIFY_TTL);
+      return invalid();
     }
 
     await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: record.userId },
-        data: { emailVerified: true },
-      }),
+      this.prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } }),
       this.prisma.emailVerificationToken.update({
         where: { id: record.id },
         data: { usedAt: new Date() },
       }),
     ]);
+    await this.cache.del(attemptsKey);
+    await this.audit('auth.email_verified', user.id, ctx, {});
 
     return { message: "Email verified. Don't Panic — you're all set." };
+  }
+
+  async resendVerification(email: string, ctx: RequestContext): Promise<{ message: string }> {
+    const generic = {
+      message: 'If that account exists and is unverified, a new code is on its way.',
+    };
+    const cooldownKey = `email-verify:resend:${email}`;
+    if (await this.cache.get(cooldownKey)) return generic;
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (user && !user.deletedAt && !user.emailVerified) {
+      await this.cache.set(cooldownKey, '1', EMAIL_RESEND_COOLDOWN);
+      await this.sendVerificationCode(user.id, user.email, user.name, ctx.locale ?? 'pt-BR');
+    }
+    return generic;
   }
 
   // --- login & lockout ---------------------------------------------------
@@ -288,7 +340,9 @@ export class AuthService {
     // Nuke the entire family so neither the thief nor the victim can continue.
     if (record.revokedAt || record.replacedById) {
       await this.tokenService.revokeFamily(record.familyId);
-      this.logger.warn(`Refresh token reuse detected for family ${record.familyId}; family revoked`);
+      this.logger.warn(
+        `Refresh token reuse detected for family ${record.familyId}; family revoked`,
+      );
       await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
         familyId: record.familyId,
       });
@@ -380,7 +434,10 @@ export class AuthService {
     await this.audit('auth.forgot_password', user.id, ctx);
   }
 
-  async resetPassword(input: ResetPasswordInput, ctx: RequestContext): Promise<{ message: string }> {
+  async resetPassword(
+    input: ResetPasswordInput,
+    ctx: RequestContext,
+  ): Promise<{ message: string }> {
     const tokenHash = sha256(input.token);
     const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
     if (!record || record.usedAt || record.expiresAt < new Date()) {

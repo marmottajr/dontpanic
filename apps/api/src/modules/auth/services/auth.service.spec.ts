@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makeUser } from '../../../../test/factories';
 import { sha256 } from '../support/crypto.util';
@@ -38,19 +34,26 @@ describe('AuthService', () => {
 
     prisma = {
       user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-      emailVerificationToken: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+      emailVerificationToken: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        deleteMany: jest.fn(),
+      },
       passwordResetToken: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
       refreshToken: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn().mockResolvedValue([]),
     };
     tokenService = {
-      issueTokensForUser: jest
-        .fn()
-        .mockResolvedValue({ accessToken: 'AT', refreshToken: 'RT' }),
+      issueTokensForUser: jest.fn().mockResolvedValue({ accessToken: 'AT', refreshToken: 'RT' }),
       issueTokensInFamily: jest
         .fn()
-        .mockResolvedValue({ tokens: { accessToken: 'AT2', refreshToken: 'RT2' }, refreshTokenId: 'rt-new' }),
+        .mockResolvedValue({
+          tokens: { accessToken: 'AT2', refreshToken: 'RT2' },
+          refreshTokenId: 'rt-new',
+        }),
       revokeFamily: jest.fn().mockResolvedValue(undefined),
       revokeToken: jest.fn().mockResolvedValue(undefined),
       revokeAllForUser: jest.fn().mockResolvedValue(undefined),
@@ -105,44 +108,90 @@ describe('AuthService', () => {
   // --- verifyEmail -------------------------------------------------------
 
   describe('verifyEmail', () => {
-    it('rejects an unknown token', async () => {
-      prisma.emailVerificationToken.findUnique.mockResolvedValue(null);
-      await expect(service.verifyEmail('raw')).rejects.toBeInstanceOf(BadRequestException);
+    const EMAIL = 'arthur@dent.dev';
+    const unverified = { id: 'u1', email: EMAIL, emailVerified: false, deletedAt: null };
+    const tokenRow = (code: string, over: Record<string, unknown> = {}) => ({
+      id: 't1',
+      userId: 'u1',
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 100000),
+      tokenHash: sha256(code),
+      createdAt: new Date(),
+      ...over,
     });
 
-    it('rejects an already-used token', async () => {
-      prisma.emailVerificationToken.findUnique.mockResolvedValue({
-        id: 't1',
-        userId: 'u1',
-        usedAt: new Date(),
-        expiresAt: new Date(Date.now() + 10000),
-      });
-      await expect(service.verifyEmail('raw')).rejects.toThrow(/Invalid or expired/);
+    it('rejects an unknown email', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.verifyEmail(EMAIL, '123456', {})).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
-    it('rejects an expired token', async () => {
-      prisma.emailVerificationToken.findUnique.mockResolvedValue({
-        id: 't1',
-        userId: 'u1',
-        usedAt: null,
-        expiresAt: new Date(Date.now() - 1000),
-      });
-      await expect(service.verifyEmail('raw')).rejects.toThrow(/Invalid or expired/);
-    });
-
-    it('verifies a valid token (looked up by its hash) and marks it used', async () => {
-      prisma.emailVerificationToken.findUnique.mockResolvedValue({
-        id: 't1',
-        userId: 'u1',
-        usedAt: null,
-        expiresAt: new Date(Date.now() + 100000),
-      });
-      const res = await service.verifyEmail('raw-token');
-      expect(prisma.emailVerificationToken.findUnique).toHaveBeenCalledWith({
-        where: { tokenHash: sha256('raw-token') },
-      });
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    it('is idempotent for an already-verified account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...unverified, emailVerified: true });
+      const res = await service.verifyEmail(EMAIL, '123456', {});
       expect(res.message).toMatch(/verified/i);
+    });
+
+    it('blocks and clears the code after too many attempts', async () => {
+      prisma.user.findUnique.mockResolvedValue(unverified);
+      cache.get.mockResolvedValue('5');
+      await expect(service.verifyEmail(EMAIL, '123456', {})).rejects.toThrow(/Too many/);
+      expect(prisma.emailVerificationToken.deleteMany).toHaveBeenCalled();
+    });
+
+    it('rejects a wrong code and counts the attempt', async () => {
+      prisma.user.findUnique.mockResolvedValue(unverified);
+      prisma.emailVerificationToken.findFirst.mockResolvedValue(tokenRow('999999'));
+      await expect(service.verifyEmail(EMAIL, '123456', {})).rejects.toThrow(/Invalid or expired/);
+      expect(cache.incr).toHaveBeenCalled();
+    });
+
+    it('rejects an expired code', async () => {
+      prisma.user.findUnique.mockResolvedValue(unverified);
+      prisma.emailVerificationToken.findFirst.mockResolvedValue(
+        tokenRow('123456', { expiresAt: new Date(Date.now() - 1000) }),
+      );
+      await expect(service.verifyEmail(EMAIL, '123456', {})).rejects.toThrow(/Invalid or expired/);
+    });
+
+    it('verifies a valid code, marks it used and clears the attempt counter', async () => {
+      prisma.user.findUnique.mockResolvedValue(unverified);
+      prisma.emailVerificationToken.findFirst.mockResolvedValue(tokenRow('123456'));
+      const res = await service.verifyEmail(EMAIL, '123456', {});
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(cache.del).toHaveBeenCalled();
+      expect(res.message).toMatch(/verified/i);
+    });
+  });
+
+  describe('resendVerification', () => {
+    const EMAIL = 'arthur@dent.dev';
+
+    it('does nothing while on cooldown but returns the generic message', async () => {
+      cache.get.mockResolvedValue('1'); // cooldown active
+      const res = await service.resendVerification(EMAIL, {});
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(res.message).toMatch(/code/i);
+    });
+
+    it('sends a new code for an existing unverified account', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        email: EMAIL,
+        name: 'Arthur',
+        emailVerified: false,
+        deletedAt: null,
+      });
+      await service.resendVerification(EMAIL, { locale: 'en' });
+      expect(cache.set).toHaveBeenCalled();
+      expect(mail.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays silent (no send) for an unknown account', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await service.resendVerification(EMAIL, {});
+      expect(mail.send).not.toHaveBeenCalled();
     });
   });
 
@@ -457,7 +506,9 @@ describe('AuthService', () => {
   describe('forgotPassword', () => {
     it('never reveals a non-existent account (no mail, no token)', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
-      await expect(service.forgotPassword({ email: 'x@y.z' } as never, ctx)).resolves.toBeUndefined();
+      await expect(
+        service.forgotPassword({ email: 'x@y.z' } as never, ctx),
+      ).resolves.toBeUndefined();
       expect(mail.send).not.toHaveBeenCalled();
       expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
     });

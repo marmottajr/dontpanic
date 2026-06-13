@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 
 /**
  * Opaque-token helpers. We hand the client a high-entropy *raw* token (in a URL
@@ -15,4 +15,11 @@ export function generateRawToken(bytes = 32): string {
 /** Deterministic SHA-256 hash (hex) used to index and compare opaque tokens. */
 export function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+/** Cryptographically-uniform numeric code (e.g. a 6-digit e-mail code). */
+export function generateNumericCode(digits = 6): string {
+  return randomInt(0, 10 ** digits)
+    .toString()
+    .padStart(digits, '0');
 }
