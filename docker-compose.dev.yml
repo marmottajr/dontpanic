@@ -1,0 +1,70 @@
+# Full dev-in-Docker override: runs the API and Web apps INSIDE containers with
+# the repository bind-mounted as a volume — edit on your machine, it hot-reloads
+# in the container. NOTHING is copied; the image only provides the toolchain.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# (The plain `docker compose up` still runs only the infra services, with the
+#  apps on your host via `pnpm dev` — that's the faster default.)
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: dontpanic-api-dev
+    working_dir: /app
+    # install (idempotent), apply migrations, then run Nest in watch mode.
+    command: >-
+      sh -c "pnpm install --prefer-offline &&
+             pnpm --filter @dontpanic/shared build &&
+             pnpm --filter @dontpanic/api exec prisma migrate deploy &&
+             pnpm --filter @dontpanic/api dev"
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      API_HOST: 0.0.0.0
+      API_PORT: 4201
+      # In-container the apps reach the infra by SERVICE NAME on internal ports,
+      # not the 42xx host ports.
+      DATABASE_URL: postgresql://dontpanic:dontpanic@postgres:5432/dontpanic?schema=public
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: http://localhost:4204/dontpanic
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      WEB_ORIGIN: http://localhost:4200
+      # reliable file-watching across the bind mount (WSL2/macOS)
+      CHOKIDAR_USEPOLLING: 'true'
+    volumes:
+      - ./:/app
+    ports:
+      - '${API_PORT:-4201}:4201'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: dontpanic-web-dev
+    working_dir: /app
+    command: >-
+      sh -c "pnpm install --prefer-offline &&
+             pnpm --filter @dontpanic/shared build &&
+             pnpm --filter @dontpanic/web dev"
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      # the BFF proxy reaches the API container by service name
+      API_INTERNAL_URL: http://api:4201
+      WATCHPACK_POLLING: 'true'
+    volumes:
+      - ./:/app
+    ports:
+      - '${WEB_PORT:-4200}:4200'
+    depends_on:
+      - api

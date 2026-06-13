@@ -19,7 +19,6 @@ const KONAMI = [
 /** Secret console greeting + Konami code. Mounted once on the dashboard. */
 export function EasterEggs() {
   useEffect(() => {
-    /* eslint-disable no-console */
     console.log(
       "%cDon't Panic.",
       'color:#34d399;font-size:30px;font-weight:800;font-family:monospace',
@@ -28,7 +27,6 @@ export function EasterEggs() {
       '%c42 — the answer to life, the universe, and your next system. 🛸',
       'color:#fbbf24;font-family:monospace;font-size:13px',
     );
-    /* eslint-enable no-console */
 
     let i = 0;
     function onKey(e: KeyboardEvent) {

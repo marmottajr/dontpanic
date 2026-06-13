@@ -8,6 +8,7 @@ allowBuilds:
   '@sentry/cli': false
   '@swc/core': true
   argon2: true
+  core-js-pure: false
   esbuild: true
   prisma: true
   sharp: true
@@ -19,6 +20,22 @@ minimumReleaseAgeExclude:
   - eslint@10.5.0
   - lucide-react@1.18.0
   - react-hook-form@7.79.0
+  - '@tailwindcss/node@4.3.1'
+  - '@tailwindcss/oxide-android-arm64@4.3.1'
+  - '@tailwindcss/oxide-darwin-arm64@4.3.1'
+  - '@tailwindcss/oxide-darwin-x64@4.3.1'
+  - '@tailwindcss/oxide-freebsd-x64@4.3.1'
+  - '@tailwindcss/oxide-linux-arm-gnueabihf@4.3.1'
+  - '@tailwindcss/oxide-linux-arm64-gnu@4.3.1'
+  - '@tailwindcss/oxide-linux-arm64-musl@4.3.1'
+  - '@tailwindcss/oxide-linux-x64-gnu@4.3.1'
+  - '@tailwindcss/oxide-linux-x64-musl@4.3.1'
+  - '@tailwindcss/oxide-wasm32-wasi@4.3.1'
+  - '@tailwindcss/oxide-win32-arm64-msvc@4.3.1'
+  - '@tailwindcss/oxide-win32-x64-msvc@4.3.1'
+  - '@tailwindcss/oxide@4.3.1'
+  - '@tailwindcss/postcss@4.3.1'
+  - tailwindcss@4.3.1
 onlyBuiltDependencies:
   - esbuild
   - "@prisma/client"

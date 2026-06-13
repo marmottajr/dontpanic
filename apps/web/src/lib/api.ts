@@ -70,3 +70,18 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   if (!res.ok) throw new ApiError(res.status, data as ApiErrorBody);
   return data as T;
 }
+
+/** Multipart upload (e.g. avatar). Sends CSRF; never sets content-type so the
+ *  browser adds the multipart boundary itself. */
+export async function apiUpload<T = unknown>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    headers: { 'x-csrf-token': await getCsrf() },
+    body: formData,
+    credentials: 'include',
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) throw new ApiError(res.status, data as ApiErrorBody);
+  return data as T;
+}

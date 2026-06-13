@@ -1,0 +1,9 @@
+# DontPanic — DEV toolchain image (NO source copied).
+# The source comes in via a bind-mount volume (see docker-compose.dev.yml),
+# so anything you change on your machine is reflected live inside the container.
+FROM node:22-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+WORKDIR /app

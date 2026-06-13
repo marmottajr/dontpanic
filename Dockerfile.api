@@ -1,0 +1,24 @@
+# DontPanic API — multi-stage production image.
+# Build context = repo root:  docker build -f Dockerfile.api -t dontpanic-api .
+FROM node:22-slim AS base
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+WORKDIR /app
+
+FROM base AS build
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @dontpanic/shared build \
+  && pnpm --filter @dontpanic/api exec prisma generate \
+  && pnpm --filter @dontpanic/api build
+
+FROM base AS runner
+ENV NODE_ENV=production
+# Copy the built workspace (keeps the generated Prisma client + native engines).
+COPY --from=build /app /app
+WORKDIR /app/apps/api
+EXPOSE 4201
+# Run migrations then boot. (Drop the migrate step if you deploy migrations separately.)
+CMD ["sh", "-c", "node ../../node_modules/prisma/build/index.js migrate deploy && node dist/main.js"]
