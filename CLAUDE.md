@@ -133,3 +133,4 @@ nem aparece em erro de segurança real. Mantenha sóbrio onde importa.
 - Não acessar a API direto do browser — sempre pelo BFF proxy.
 - Não duplicar contrato: schema vive só em `@dontpanic/shared`.
 - Não commitar `.env` (só `.env.example`).
+- **Não fazer `git commit` nem `git push` por conta própria** — só commitar/pushar quando o Marcio pedir explicitamente. Pode editar arquivos à vontade; deixar o versionamento para quando ele solicitar.
