@@ -23,6 +23,21 @@ most of it while you were asleep. Nobody thanked me.
 A glorified "Hello, World", you'd think. It's bigger on the inside — it's
 **DontPanic**. Like my capacity for disappointment.
 
+### Start your own _(one command; even you can manage that)_
+
+You don't clone me. You summon me. One line and a fresh copy unfolds onto your
+disk — renamed, with its own freshly generated secrets, ready to run:
+
+```bash
+npx create-dontpanic@latest my-app
+```
+
+I'll ask where to put it, whether 2FA is mandatory, and whether to install and
+`git init` — then I do the rest while you watch. No git history of my suffering,
+no template debris. The full saga lives in
+[`create-dontpanic`](./packages/create-dontpanic). Everything below is for once
+you're _inside_ a project — scaffolded or cloned, it's all the same misery.
+
 ### The stack _(I memorised it in 0.0000001 seconds; I have nothing else to do)_
 
 - **Backend** — NestJS + Fastify + TypeScript + Prisma 7 + PostgreSQL
@@ -114,6 +129,21 @@ enquanto você dormia. Ninguém me agradeceu.
 
 Você pensa que é um mero "Hello, World". É maior por dentro — é o
 **DontPanic**. Como a minha capacidade de decepção.
+
+### Comece o seu _(um comando; até você dá conta)_
+
+Você não me clona. Você me invoca. Uma linha e uma cópia nova se desdobra no seu
+disco — renomeada, com segredos próprios recém-gerados, pronta pra rodar:
+
+```bash
+npx create-dontpanic@latest meu-app
+```
+
+Eu pergunto onde colocar, se o 2FA é obrigatório, e se instalo as deps e dou
+`git init` — depois faço o resto enquanto você assiste. Sem histórico do meu
+sofrimento, sem entulho de template. A saga completa vive em
+[`create-dontpanic`](./packages/create-dontpanic). Tudo abaixo é pra quando você
+já está _dentro_ de um projeto — gerado ou clonado, a mesma desgraça.
 
 ### A stack _(decorei em 0,0000001 segundo; não tenho mais nada pra fazer)_
 

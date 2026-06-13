@@ -1,0 +1,46 @@
+{
+  "name": "create-dontpanic",
+  "version": "0.0.3",
+  "description": "Scaffold a new DontPanic app — a production-grade full-stack boilerplate. Don't Panic.",
+  "type": "module",
+  "bin": {
+    "create-dontpanic": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "template"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "dontpanic",
+    "boilerplate",
+    "scaffold",
+    "nestjs",
+    "nextjs",
+    "starter",
+    "create"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:template": "node scripts/build-template.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "prepublishOnly": "pnpm run build:template && pnpm run build"
+  },
+  "devDependencies": {
+    "@clack/prompts": "1.5.1",
+    "@dontpanic/config": "workspace:*",
+    "@types/node": "25.9.3",
+    "eslint": "^10.5.0",
+    "picocolors": "^1.1.1",
+    "tsup": "^8.5.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.8"
+  }
+}

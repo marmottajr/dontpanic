@@ -24,3 +24,6 @@ test-results/
 *.log
 .DS_Store
 prisma/*.db
+
+# create-dontpanic: generated template (built from the repo on publish)
+packages/create-dontpanic/template/

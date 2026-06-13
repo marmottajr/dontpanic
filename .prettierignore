@@ -1,0 +1,5 @@
+# Generated boilerplate copy bundled by create-dontpanic (built on publish)
+packages/create-dontpanic/template/
+
+# Lockfiles — pnpm owns the format, Prettier must not touch it
+pnpm-lock.yaml
