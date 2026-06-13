@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { passwordSchema } from './auth';
+import { passwordSchema } from './primitives';
 
 export const RoleEnum = z.enum(['ADMIN', 'USER']);
 export type Role = z.infer<typeof RoleEnum>;
@@ -28,3 +28,32 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Returned after an avatar is uploaded or deleted (null when removed). */
+export const avatarResponseSchema = z.object({
+  avatarUrl: z.string().url().nullable(),
+});
+export type AvatarResponse = z.infer<typeof avatarResponseSchema>;
+
+/** A single audit-log entry as exposed to the data subject (LGPD export). */
+export const auditLogEntrySchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  metadata: z.unknown().nullable(),
+  createdAt: z.string(),
+});
+export type AuditLogEntry = z.infer<typeof auditLogEntrySchema>;
+
+/**
+ * LGPD right of access: everything the system holds about the data subject,
+ * bundled as portable JSON. Secrets (password hash, 2FA secret, backup codes,
+ * raw tokens) are deliberately excluded.
+ */
+export const userDataExportSchema = z.object({
+  profile: userDtoSchema,
+  auditLogs: z.array(auditLogEntrySchema),
+  exportedAt: z.string(),
+});
+export type UserDataExport = z.infer<typeof userDataExportSchema>;

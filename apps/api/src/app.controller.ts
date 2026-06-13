@@ -1,16 +1,19 @@
 import { Controller, Get, HttpCode } from '@nestjs/common';
 import { AppService } from './app.service';
+import { Public } from './common/decorators/public.decorator';
 
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  @Public()
   @Get()
   hello() {
     return this.appService.hello();
   }
 
   /** Easter egg: HTTP 418. Marvin disapproves. */
+  @Public()
   @Get('teapot')
   @HttpCode(418)
   teapot() {

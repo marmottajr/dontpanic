@@ -7,6 +7,8 @@ import { ZodValidationPipe, cleanupOpenApiDoc } from 'nestjs-zod';
 import helmet from '@fastify/helmet';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCsrf from '@fastify/csrf-protection';
+import fastifyMultipart from '@fastify/multipart';
+import type { preHandlerHookHandler } from 'fastify';
 import { AppModule } from './app.module';
 import type { Env } from './config/env';
 
@@ -34,8 +36,33 @@ async function bootstrap(): Promise<void> {
   });
   await app.register(fastifyCsrf, {
     cookieKey: 'csrf_token',
-    cookieOpts: { signed: false, sameSite: 'lax', httpOnly: false, path: '/', secure: isProd },
+    cookieOpts: {
+      signed: false,
+      sameSite: 'lax',
+      httpOnly: false,
+      path: '/',
+      // Keep the csrf cookie's Secure decision in lockstep with the auth cookies
+      // (COOKIE_SECURE || production) so all three cookie families agree.
+      secure: config.get('COOKIE_SECURE', { infer: true }) || isProd,
+    },
     getToken: (req) => (req.headers['x-csrf-token'] as string | undefined) ?? '',
+  });
+
+  // Registering the plugin only DECORATES the instance with `csrfProtection`; it
+  // does nothing until attached. Enforce double-submit on every unsafe method.
+  // preHandler (not onRequest) so the token may also arrive in the parsed body.
+  const fastify = app.getHttpAdapter().getInstance();
+  const csrfProtection = (fastify as unknown as { csrfProtection: preHandlerHookHandler })
+    .csrfProtection;
+  fastify.addHook('preHandler', (req, reply, done) => {
+    const m = req.method.toUpperCase();
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return done();
+    return csrfProtection.call(fastify, req, reply, done);
+  });
+
+  // Multipart uploads (avatars). 5MB cap enforced at the parser, before sharp.
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 5_000_000, files: 1 },
   });
 
   app.enableCors({

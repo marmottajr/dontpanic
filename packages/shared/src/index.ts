@@ -4,5 +4,6 @@
  * inferred types, so the contract can never silently drift between the two.
  */
 export * from './common';
-export * from './auth';
+export * from './primitives';
 export * from './user';
+export * from './auth';

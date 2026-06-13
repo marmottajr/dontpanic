@@ -11,6 +11,7 @@ import { StorageModule } from './infra/storage/storage.module';
 import { MailModule } from './infra/mail/mail.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AppController } from './app.controller';
@@ -61,7 +62,9 @@ import { AppService } from './app.service';
   providers: [
     AppService,
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    // Order matters: throttle first (cheap, pre-auth), then authenticate.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })
 export class AppModule {}
