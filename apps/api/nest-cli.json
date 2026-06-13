@@ -3,7 +3,8 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
-    "deleteOutDir": true,
+    "_comment": "deleteOutDir is false so dist can be a mounted volume in dev (rmdir of a mount = EBUSY) and so a host build never unlinks container-written files. tsc emits every file each build (no incremental), so stale output isn't a risk.",
+    "deleteOutDir": false,
     "builder": "tsc"
   }
 }
