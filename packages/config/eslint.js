@@ -17,6 +17,9 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
+      // House rule: never use the browser's alert/confirm/prompt — use a
+      // system-styled modal (ConfirmDialog / Dialog) instead. Enforced.
+      'no-alert': 'error',
     },
   },
   {

@@ -96,6 +96,7 @@ Trocar de provider = trocar uma variável, sem tocar na lógica.
 - Toda rota nova: schema Zod no `shared`, DTO/validação no controller, teste unit + e2e.
 - Commits: **Conventional Commits** (commitlint valida). Versionamento via **Changesets**.
 - Use os componentes de `apps/web/src/components/ui` (shadcn). Layout muda por **tokens CSS**, não por edição das telas.
+- **Nunca** use `alert` / `confirm` / `prompt` do navegador — sempre um modal no estilo do sistema (`ConfirmDialog` ou um `Dialog`). Regra aplicada pelo ESLint (`no-alert`), então o lint/CI falha se alguém usar.
 
 ## Política de dependências
 
