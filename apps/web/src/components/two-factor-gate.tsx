@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import type { SecurityStatus } from '@dontpanic/shared';
 import { api } from '@/lib/api';
@@ -14,7 +14,6 @@ import { TwoFactorPromptDialog } from '@/components/two-factor-prompt-dialog';
  */
 export function TwoFactorGate() {
   const router = useRouter();
-  const pathname = usePathname();
   const [promptOpen, setPromptOpen] = useState(false);
 
   const { data } = useQuery({
@@ -23,14 +22,17 @@ export function TwoFactorGate() {
     staleTime: 0,
   });
 
+  // Drive once off the fetched status — NOT off pathname, or it would re-open
+  // the prompt on every navigation. Snoozing invalidates ['security'], so the
+  // refetch returns shouldPrompt:false and this won't fire again.
   useEffect(() => {
     if (!data) return;
-    if (data.twoFactorRequired && !data.twoFactorEnabled && pathname !== '/setup-2fa') {
+    if (data.twoFactorRequired && !data.twoFactorEnabled) {
       router.replace('/setup-2fa');
     } else if (data.shouldPrompt) {
       setPromptOpen(true);
     }
-  }, [data, pathname, router]);
+  }, [data, router]);
 
   if (!data?.shouldPrompt) return null;
   return <TwoFactorPromptDialog open={promptOpen} onOpenChange={setPromptOpen} />;

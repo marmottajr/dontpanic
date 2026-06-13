@@ -34,6 +34,8 @@ export function TwoFactorPromptDialog({
     } catch {
       /* snooze is best-effort — closing is what matters */
     }
+    // Refetch status so shouldPrompt flips to false and the gate stops nudging.
+    void qc.invalidateQueries({ queryKey: ['security'] });
     onOpenChange(false);
   }
 
