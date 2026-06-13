@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.spec.json",
+  "compilerOptions": {
+    // Lets ts-jest transpile the one ESM-only dependency (@scure/base) that
+    // otplib pulls in. @scure/base@2 ships `exports: null` + an ESM `index.js`
+    // with no CJS build, so Jest (CommonJS runtime) chokes on its `export`
+    // syntax. We un-ignore it in `transformIgnorePatterns` and run it through
+    // this allowJs-enabled transform. allowJs is scoped to the e2e config only.
+    "allowJs": true,
+    "checkJs": false
+  }
+}

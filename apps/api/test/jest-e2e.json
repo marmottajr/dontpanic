@@ -1,0 +1,23 @@
+{
+  "rootDir": ".",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "testRegex": ".e2e-spec.ts$",
+  "testEnvironment": "node",
+  "testEnvironmentOptions": {
+    "customExportConditions": ["require", "node", "default"]
+  },
+  "transform": {
+    "^.+\\.ts$": [
+      "ts-jest",
+      {
+        "tsconfig": "<rootDir>/../tsconfig.spec.json",
+        "isolatedModules": false
+      }
+    ],
+    "(@scure[+/]base|@noble[+/]hashes).+\\.js$": "<rootDir>/esm-to-cjs-transformer.js"
+  },
+  "transformIgnorePatterns": [],
+  "globalSetup": "<rootDir>/global-setup.ts",
+  "setupFiles": ["<rootDir>/e2e-setup.ts", "<rootDir>/setup.ts"],
+  "testTimeout": 60000
+}

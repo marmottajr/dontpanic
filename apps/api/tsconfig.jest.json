@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    // ts-jest compiles BOTH our specs AND the ESM-only otplib dep chain
+    // (otplib + @otplib/* + @scure/base + @noble/hashes), which jest.config.js
+    // whitelists in transformIgnorePatterns. allowJs lets ts-jest down-level
+    // those .js modules to CommonJS; rootDir is widened so node_modules sources
+    // aren't rejected by the tsconfig's "./src" rootDir.
+    "allowJs": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

@@ -38,8 +38,16 @@ export class TwoFactorService {
    * clock skew between the server and the authenticator app.
    */
   async verifyTotp(secret: string, token: string): Promise<boolean> {
-    const result = await verify({ secret, token, epochTolerance: 30 });
-    return result.valid;
+    // otplib THROWS on a malformed token (e.g. a backup code, which is not a
+    // 6-digit number). At login the auth service tries verifyTotp() BEFORE
+    // falling back to backup codes, so an unguarded throw here surfaces as a 500
+    // on every backup-code login. Treat any malformed/failed code as "not valid".
+    try {
+      const result = await verify({ secret, token, epochTolerance: 30 });
+      return result.valid;
+    } catch {
+      return false;
+    }
   }
 
   /** Generate N raw backup codes; returns the raw codes and their Argon2 hashes. */

@@ -27,16 +27,25 @@ import { AppService } from './app.service';
     }),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => ({
-        pinoHttp: {
-          level: config.get('NODE_ENV', { infer: true }) === 'production' ? 'info' : 'debug',
-          transport:
-            config.get('NODE_ENV', { infer: true }) !== 'production'
-              ? { target: 'pino-pretty', options: { singleLine: true } }
-              : undefined,
-          redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
-        },
-      }),
+      useFactory: (config: ConfigService<Env, true>) => {
+        const nodeEnv = config.get('NODE_ENV', { infer: true });
+        return {
+          pinoHttp: {
+            // Silence request logging under test so e2e output stays readable;
+            // info in prod, debug in dev.
+            level: nodeEnv === 'test' ? 'silent' : nodeEnv === 'production' ? 'info' : 'debug',
+            transport:
+              nodeEnv === 'development'
+                ? { target: 'pino-pretty', options: { singleLine: true } }
+                : undefined,
+            redact: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              'res.headers["set-cookie"]',
+            ],
+          },
+        };
+      },
     }),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
