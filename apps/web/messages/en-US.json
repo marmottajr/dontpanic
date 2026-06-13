@@ -1,0 +1,132 @@
+{
+  "common": {
+    "appName": "DontPanic",
+    "tagline": "The answer to building any system.",
+    "dontPanic": "Don't Panic.",
+    "loading": "Loading…",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "back": "Back",
+    "submit": "Submit",
+    "continue": "Continue",
+    "email": "Email",
+    "password": "Password",
+    "name": "Name",
+    "optional": "optional"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "profile": "Profile",
+    "logout": "Log out",
+    "theme": "Theme",
+    "language": "Language"
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Sign in to your account to continue.",
+      "submit": "Sign in",
+      "forgot": "Forgot password?",
+      "noAccount": "No account?",
+      "signup": "Create one",
+      "twoFactorTitle": "Two-factor verification",
+      "twoFactorSubtitle": "Enter the code from your authenticator app.",
+      "code": "6-digit code",
+      "verify": "Verify",
+      "invalid": "Incorrect email or password.",
+      "locked": "Account temporarily locked. Try again later."
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Get started in seconds. Don't Panic.",
+      "submit": "Create account",
+      "hasAccount": "Already have an account?",
+      "signin": "Sign in",
+      "success": "Account created! Check your email to confirm."
+    },
+    "forgot": {
+      "title": "Reset your password",
+      "subtitle": "We'll email you a reset link.",
+      "submit": "Send reset link",
+      "sent": "If that email exists, we've sent a reset link.",
+      "remembered": "Remembered it?"
+    },
+    "reset": {
+      "title": "New password",
+      "subtitle": "Choose a strong password.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "submit": "Reset password",
+      "success": "Password reset! You can sign in now.",
+      "mismatch": "Passwords don't match.",
+      "invalidToken": "Invalid or expired link."
+    },
+    "verify": {
+      "title": "Verifying your email",
+      "success": "Email verified successfully!",
+      "error": "Couldn't verify. The link may have expired.",
+      "goToLogin": "Go to login"
+    }
+  },
+  "dashboard": {
+    "greeting": "Hello, {name}",
+    "helloWorld": "Hello, World!",
+    "subtitle": "Your base system is live. Build anything from here.",
+    "answer": "The answer is 42.",
+    "cards": {
+      "secure": { "title": "Secure by default", "body": "JWT, 2FA, CSRF, rate-limit and audit logging included." },
+      "i18n": { "title": "Multilingual", "body": "pt-BR and en-US ready — switch with the flag." },
+      "swappable": { "title": "Everything pluggable", "body": "Swap database, storage and email with one variable." }
+    }
+  },
+  "profile": {
+    "title": "Profile",
+    "subtitle": "Manage your account and security.",
+    "tabs": { "general": "General", "security": "Security" },
+    "avatar": { "title": "Profile photo", "upload": "Upload image", "remove": "Remove", "hint": "PNG, JPG or WebP up to 5MB." },
+    "nameSection": { "title": "Name", "save": "Save name", "updated": "Name updated." },
+    "passwordSection": {
+      "title": "Change password",
+      "current": "Current password",
+      "new": "New password",
+      "save": "Update password",
+      "updated": "Password updated. Please sign in again."
+    },
+    "twoFactor": {
+      "title": "Two-factor authentication (2FA)",
+      "enabled": "2FA is enabled.",
+      "disabled": "2FA is disabled.",
+      "enable": "Enable 2FA",
+      "disable": "Disable 2FA",
+      "scan": "Scan the QR code with your authenticator app.",
+      "enterCode": "Enter the generated code to confirm.",
+      "backupTitle": "Backup codes",
+      "backupHint": "Store these somewhere safe. Each works once.",
+      "enabledToast": "2FA enabled!",
+      "disabledToast": "2FA disabled."
+    },
+    "danger": {
+      "title": "Danger zone",
+      "exportTitle": "Export my data",
+      "exportBody": "Download everything we hold about you (LGPD/GDPR).",
+      "export": "Export data",
+      "deleteTitle": "Delete account",
+      "deleteBody": "This action is irreversible.",
+      "delete": "Delete my account",
+      "deleteConfirm": "Are you sure? This cannot be undone."
+    }
+  },
+  "errors": {
+    "notFound": { "title": "Page not found", "body": "This page got lost in hyperspace.", "home": "Back home" },
+    "serverError": { "title": "Something broke", "body": "Don't Panic. We're already on it.", "retry": "Try again" },
+    "generic": "Something went wrong. Don't Panic."
+  },
+  "validation": {
+    "required": "Required field",
+    "email": "Invalid email",
+    "passwordWeak": "Min. 8 chars, with uppercase, lowercase and a number"
+  }
+}

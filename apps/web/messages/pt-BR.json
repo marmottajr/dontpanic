@@ -1,0 +1,132 @@
+{
+  "common": {
+    "appName": "DontPanic",
+    "tagline": "A resposta para construir qualquer sistema.",
+    "dontPanic": "Não entre em pânico.",
+    "loading": "Carregando…",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "delete": "Excluir",
+    "back": "Voltar",
+    "submit": "Enviar",
+    "continue": "Continuar",
+    "email": "E-mail",
+    "password": "Senha",
+    "name": "Nome",
+    "optional": "opcional"
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "profile": "Perfil",
+    "logout": "Sair",
+    "theme": "Tema",
+    "language": "Idioma"
+  },
+  "auth": {
+    "login": {
+      "title": "Bem-vindo de volta",
+      "subtitle": "Entre na sua conta para continuar.",
+      "submit": "Entrar",
+      "forgot": "Esqueceu a senha?",
+      "noAccount": "Não tem conta?",
+      "signup": "Criar conta",
+      "twoFactorTitle": "Verificação em duas etapas",
+      "twoFactorSubtitle": "Digite o código do seu app autenticador.",
+      "code": "Código de 6 dígitos",
+      "verify": "Verificar",
+      "invalid": "E-mail ou senha incorretos.",
+      "locked": "Conta temporariamente bloqueada. Tente novamente mais tarde."
+    },
+    "register": {
+      "title": "Crie sua conta",
+      "subtitle": "Comece em segundos. Não entre em pânico.",
+      "submit": "Criar conta",
+      "hasAccount": "Já tem conta?",
+      "signin": "Entrar",
+      "success": "Conta criada! Verifique seu e-mail para confirmar."
+    },
+    "forgot": {
+      "title": "Recuperar senha",
+      "subtitle": "Enviaremos um link de redefinição para o seu e-mail.",
+      "submit": "Enviar link",
+      "sent": "Se o e-mail existir, enviamos um link de redefinição.",
+      "remembered": "Lembrou a senha?"
+    },
+    "reset": {
+      "title": "Nova senha",
+      "subtitle": "Escolha uma senha forte.",
+      "newPassword": "Nova senha",
+      "confirmPassword": "Confirmar senha",
+      "submit": "Redefinir senha",
+      "success": "Senha redefinida! Você já pode entrar.",
+      "mismatch": "As senhas não coincidem.",
+      "invalidToken": "Link inválido ou expirado."
+    },
+    "verify": {
+      "title": "Verificando seu e-mail",
+      "success": "E-mail verificado com sucesso!",
+      "error": "Não foi possível verificar. O link pode ter expirado.",
+      "goToLogin": "Ir para o login"
+    }
+  },
+  "dashboard": {
+    "greeting": "Olá, {name}",
+    "helloWorld": "Hello, World!",
+    "subtitle": "Seu sistema-base está no ar. Construa qualquer coisa a partir daqui.",
+    "answer": "A resposta é 42.",
+    "cards": {
+      "secure": { "title": "Seguro por padrão", "body": "JWT, 2FA, CSRF, rate-limit e auditoria já inclusos." },
+      "i18n": { "title": "Multilíngue", "body": "pt-BR e en-US prontos, troque pela bandeira." },
+      "swappable": { "title": "Tudo plugável", "body": "Banco, storage e e-mail trocáveis por uma variável." }
+    }
+  },
+  "profile": {
+    "title": "Perfil",
+    "subtitle": "Gerencie sua conta e segurança.",
+    "tabs": { "general": "Geral", "security": "Segurança" },
+    "avatar": { "title": "Foto de perfil", "upload": "Enviar imagem", "remove": "Remover", "hint": "PNG, JPG ou WebP até 5MB." },
+    "nameSection": { "title": "Nome", "save": "Salvar nome", "updated": "Nome atualizado." },
+    "passwordSection": {
+      "title": "Alterar senha",
+      "current": "Senha atual",
+      "new": "Nova senha",
+      "save": "Atualizar senha",
+      "updated": "Senha atualizada. Faça login novamente."
+    },
+    "twoFactor": {
+      "title": "Autenticação em duas etapas (2FA)",
+      "enabled": "2FA está ativo.",
+      "disabled": "2FA está desativado.",
+      "enable": "Ativar 2FA",
+      "disable": "Desativar 2FA",
+      "scan": "Escaneie o QR code com seu app autenticador.",
+      "enterCode": "Digite o código gerado para confirmar.",
+      "backupTitle": "Códigos de backup",
+      "backupHint": "Guarde estes códigos em local seguro. Cada um funciona uma vez.",
+      "enabledToast": "2FA ativado!",
+      "disabledToast": "2FA desativado."
+    },
+    "danger": {
+      "title": "Zona de perigo",
+      "exportTitle": "Exportar meus dados",
+      "exportBody": "Baixe tudo o que guardamos sobre você (LGPD).",
+      "export": "Exportar dados",
+      "deleteTitle": "Excluir conta",
+      "deleteBody": "Esta ação é irreversível.",
+      "delete": "Excluir minha conta",
+      "deleteConfirm": "Tem certeza? Isso não pode ser desfeito."
+    }
+  },
+  "errors": {
+    "notFound": { "title": "Página não encontrada", "body": "Esta página se perdeu no hiperespaço.", "home": "Voltar ao início" },
+    "serverError": { "title": "Algo quebrou", "body": "Não entre em pânico. Já estamos resolvendo.", "retry": "Tentar de novo" },
+    "generic": "Algo deu errado. Não entre em pânico."
+  },
+  "validation": {
+    "required": "Campo obrigatório",
+    "email": "E-mail inválido",
+    "passwordWeak": "Mín. 8 caracteres, com maiúscula, minúscula e número"
+  }
+}
