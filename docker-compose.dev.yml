@@ -1,32 +1,56 @@
 # Full dev-in-Docker override: runs the API and Web apps INSIDE containers with
-# the repository bind-mounted as a volume — edit on your machine, it hot-reloads
-# in the container. NOTHING is copied; the image only provides the toolchain.
+# the source bind-mounted, so edits on your machine hot-reload in the container.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
-# (The plain `docker compose up` still runs only the infra services, with the
-#  apps on your host via `pnpm dev` — that's the faster default.)
+# How it stays correct for a pnpm monorepo:
+#  - The SOURCE is bind-mounted (./:/app) — your edits are reflected live.
+#  - node_modules are NOT shared with the host: they live in named volumes that
+#    "mask" each node_modules path, so the container installs its own (with the
+#    right native binaries) and never touches your host's node_modules.
+#  - A one-shot `deps` service installs + builds the shared package once; api and
+#    web wait for it (no concurrent installs).
+#
+# (Plain `docker compose up -d` still runs only the infra, with the apps on your
+#  host via `pnpm dev` — the faster default.)
+
+x-app-volumes: &app-volumes
+  - ./:/app
+  - nm_root:/app/node_modules
+  - nm_api:/app/apps/api/node_modules
+  - nm_web:/app/apps/web/node_modules
+  - nm_shared:/app/packages/shared/node_modules
+  - nm_config:/app/packages/config/node_modules
 
 services:
+  deps:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: dontpanic-deps
+    working_dir: /app
+    command: >-
+      sh -c "pnpm install --prefer-offline &&
+             pnpm --filter @dontpanic/shared build"
+    volumes: *app-volumes
+    restart: 'no'
+
   api:
     build:
       context: .
       dockerfile: Dockerfile.dev
     container_name: dontpanic-api-dev
-    working_dir: /app
-    # install (idempotent), apply migrations, then run Nest in watch mode.
+    working_dir: /app/apps/api
     command: >-
-      sh -c "pnpm install --prefer-offline &&
-             pnpm --filter @dontpanic/shared build &&
-             pnpm --filter @dontpanic/api exec prisma migrate deploy &&
-             pnpm --filter @dontpanic/api dev"
+      sh -c "pnpm exec prisma migrate deploy && pnpm run dev"
     env_file: .env
     environment:
       NODE_ENV: development
       API_HOST: 0.0.0.0
       API_PORT: 4201
       # In-container the apps reach the infra by SERVICE NAME on internal ports,
-      # not the 42xx host ports.
+      # not the 42xx host ports. (Compose env overrides .env; @nestjs/config gives
+      # process.env precedence over the .env file.)
       DATABASE_URL: postgresql://dontpanic:dontpanic@postgres:5432/dontpanic?schema=public
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
@@ -34,10 +58,8 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
       WEB_ORIGIN: http://localhost:4200
-      # reliable file-watching across the bind mount (WSL2/macOS)
       CHOKIDAR_USEPOLLING: 'true'
-    volumes:
-      - ./:/app
+    volumes: *app-volumes
     ports:
       - '${API_PORT:-4201}:4201'
     depends_on:
@@ -45,26 +67,35 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      deps:
+        condition: service_completed_successfully
 
   web:
     build:
       context: .
       dockerfile: Dockerfile.dev
     container_name: dontpanic-web-dev
-    working_dir: /app
+    working_dir: /app/apps/web
     command: >-
-      sh -c "pnpm install --prefer-offline &&
-             pnpm --filter @dontpanic/shared build &&
-             pnpm --filter @dontpanic/web dev"
+      sh -c "pnpm run dev"
     env_file: .env
     environment:
       NODE_ENV: development
-      # the BFF proxy reaches the API container by service name
+      # the BFF proxy (server-side, in the web container) reaches the API container
       API_INTERNAL_URL: http://api:4201
       WATCHPACK_POLLING: 'true'
-    volumes:
-      - ./:/app
+    volumes: *app-volumes
     ports:
       - '${WEB_PORT:-4200}:4200'
     depends_on:
-      - api
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+volumes:
+  nm_root:
+  nm_api:
+  nm_web:
+  nm_shared:
+  nm_config:
