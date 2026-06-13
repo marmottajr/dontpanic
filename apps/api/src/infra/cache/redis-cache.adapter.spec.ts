@@ -4,6 +4,8 @@ const mockClient = {
   del: jest.fn(),
   incr: jest.fn(),
   expire: jest.fn(),
+  pttl: jest.fn(),
+  ping: jest.fn(),
   quit: jest.fn(),
 };
 
@@ -69,6 +71,22 @@ describe('RedisCacheAdapter', () => {
     mockClient.incr.mockResolvedValue(1);
     await adapter.incr('k');
     expect(mockClient.expire).not.toHaveBeenCalled();
+  });
+
+  it('ttl converts pttl milliseconds to ceil seconds', async () => {
+    mockClient.pttl.mockResolvedValue(2500);
+    expect(await adapter.ttl('k')).toBe(3);
+  });
+
+  it('ttl returns 0 when the key is missing or has no expiry', async () => {
+    mockClient.pttl.mockResolvedValue(-2);
+    expect(await adapter.ttl('k')).toBe(0);
+  });
+
+  it('ping delegates to client.ping', async () => {
+    mockClient.ping.mockResolvedValue('PONG');
+    await adapter.ping();
+    expect(mockClient.ping).toHaveBeenCalled();
   });
 
   it('onModuleDestroy quits the client', async () => {

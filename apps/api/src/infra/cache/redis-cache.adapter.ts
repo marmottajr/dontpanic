@@ -33,6 +33,15 @@ export class RedisCacheAdapter implements CacheProvider, OnModuleDestroy {
     return value;
   }
 
+  async ttl(key: string): Promise<number> {
+    const ms = await this.client.pttl(key); // -2 missing, -1 no expiry
+    return ms > 0 ? Math.ceil(ms / 1000) : 0;
+  }
+
+  async ping(): Promise<void> {
+    await this.client.ping();
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.client.quit();
   }

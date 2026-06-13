@@ -4,6 +4,8 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv, type Env } from './config/env';
+import { CACHE_PROVIDER, type CacheProvider } from './core/cache/cache.provider';
+import { CacheThrottlerStorage } from './infra/throttler/cache-throttler.storage';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { CacheModule } from './infra/cache/cache.module';
@@ -49,14 +51,17 @@ import { AppService } from './app.service';
       },
     }),
     ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => ({
+      inject: [ConfigService, CACHE_PROVIDER],
+      useFactory: (config: ConfigService<Env, true>, cache: CacheProvider) => ({
         throttlers: [
           {
             ttl: config.get('RATE_LIMIT_WINDOW', { infer: true }),
             limit: config.get('RATE_LIMIT_MAX', { infer: true }),
           },
         ],
+        // Distributed store: counters live in Redis (or memory in tests), so the
+        // limit holds across multiple API instances instead of per-process.
+        storage: new CacheThrottlerStorage(cache),
       }),
     }),
     PrismaModule,

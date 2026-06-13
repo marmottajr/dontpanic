@@ -8,4 +8,8 @@ export interface CacheProvider {
   del(key: string): Promise<void>;
   /** Atomic increment; sets TTL on first write. Returns the new value. */
   incr(key: string, ttlSeconds?: number): Promise<number>;
+  /** Remaining TTL of a key in seconds; 0 when missing or with no expiry set. */
+  ttl(key: string): Promise<number>;
+  /** Liveness probe for health checks; rejects if the backend is unreachable. */
+  ping(): Promise<void>;
 }

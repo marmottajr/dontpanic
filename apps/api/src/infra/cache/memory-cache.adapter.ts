@@ -47,4 +47,14 @@ export class MemoryCacheAdapter implements CacheProvider {
     this.store.set(key, { value: String(next), expiresAt });
     return next;
   }
+
+  async ttl(key: string): Promise<number> {
+    const entry = this.store.get(key);
+    if (!entry || this.isExpired(entry) || entry.expiresAt === null) return 0;
+    return Math.ceil((entry.expiresAt - Date.now()) / 1000);
+  }
+
+  async ping(): Promise<void> {
+    // In-process cache is always reachable.
+  }
 }

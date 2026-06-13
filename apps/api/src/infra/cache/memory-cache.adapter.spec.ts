@@ -90,5 +90,28 @@ describe('MemoryCacheAdapter', () => {
       // Prior entry is expired; incr should restart at 1 with a fresh window.
       expect(await cache.incr('count', 10)).toBe(1);
     });
+
+    it('ttl reports the remaining seconds and 0 once expired', async () => {
+      await cache.set('k', 'v', 30);
+      jest.advanceTimersByTime(10_000);
+      expect(await cache.ttl('k')).toBe(20);
+      jest.advanceTimersByTime(21_000);
+      expect(await cache.ttl('k')).toBe(0);
+    });
+  });
+
+  describe('ttl & ping', () => {
+    it('ttl returns 0 for a missing key', async () => {
+      expect(await cache.ttl('nope')).toBe(0);
+    });
+
+    it('ttl returns 0 for a key with no expiry', async () => {
+      await cache.set('k', 'v');
+      expect(await cache.ttl('k')).toBe(0);
+    });
+
+    it('ping resolves — the in-process cache is always reachable', async () => {
+      await expect(cache.ping()).resolves.toBeUndefined();
+    });
   });
 });
