@@ -20,6 +20,7 @@
   "nav": {
     "dashboard": "Painel",
     "profile": "Perfil",
+    "admin": "Admin",
     "logout": "Sair",
     "theme": "Tema",
     "language": "Idioma"
@@ -158,6 +159,32 @@
       "delete": "Excluir minha conta",
       "deleteConfirm": "Tem certeza? Isso não pode ser desfeito."
     }
+  },
+  "admin": {
+    "title": "Administração",
+    "subtitle": "Gerencie usuários e permissões.",
+    "search": "Buscar",
+    "searchPlaceholder": "Buscar por e-mail ou nome",
+    "colUser": "Usuário",
+    "colRole": "Papel",
+    "colStatus": "Status",
+    "colActions": "Ações",
+    "empty": "Nenhum usuário encontrado.",
+    "makeAdmin": "Tornar admin",
+    "makeUser": "Tornar usuário",
+    "lock": "Bloquear",
+    "unlock": "Desbloquear",
+    "delete": "Excluir",
+    "deletedTag": "Excluído",
+    "lockedTag": "Bloqueado",
+    "unverifiedTag": "Não verificado",
+    "roleChanged": "Papel atualizado.",
+    "deleted": "Usuário excluído.",
+    "deleteTitle": "Excluir usuário",
+    "deleteConfirm": "Excluir {email}? Isso revoga as sessões e marca a conta como excluída.",
+    "pageInfo": "Página {page} de {total}",
+    "prev": "Anterior",
+    "next": "Próxima"
   },
   "errors": {
     "notFound": {

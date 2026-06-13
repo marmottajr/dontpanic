@@ -4,8 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { LayoutDashboard, Menu, User, X } from 'lucide-react';
+import { LayoutDashboard, Menu, Shield, User, X } from 'lucide-react';
 import { Brand } from '@/components/brand';
+import { useUser } from '@/hooks/use-auth';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
@@ -17,12 +18,21 @@ const NAV = [
   { href: '/profile', key: 'profile', icon: User, exact: false },
 ] as const;
 
+type NavItem = { href: string; key: string; icon: typeof LayoutDashboard; exact: boolean };
+
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const t = useTranslations('nav');
+  const { data: user } = useUser();
+  const items: NavItem[] = [
+    ...NAV,
+    ...(user?.role === 'ADMIN'
+      ? [{ href: '/admin', key: 'admin', icon: Shield, exact: false }]
+      : []),
+  ];
   return (
     <nav className="flex flex-col gap-1">
-      {NAV.map(({ href, key, icon: Icon, exact }) => {
+      {items.map(({ href, key, icon: Icon, exact }) => {
         const active = exact ? pathname === href : pathname.startsWith(href);
         return (
           <Link

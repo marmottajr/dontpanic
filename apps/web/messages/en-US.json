@@ -20,6 +20,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "profile": "Profile",
+    "admin": "Admin",
     "logout": "Log out",
     "theme": "Theme",
     "language": "Language"
@@ -158,6 +159,32 @@
       "delete": "Delete my account",
       "deleteConfirm": "Are you sure? This cannot be undone."
     }
+  },
+  "admin": {
+    "title": "Administration",
+    "subtitle": "Manage users and permissions.",
+    "search": "Search",
+    "searchPlaceholder": "Search by email or name",
+    "colUser": "User",
+    "colRole": "Role",
+    "colStatus": "Status",
+    "colActions": "Actions",
+    "empty": "No users found.",
+    "makeAdmin": "Make admin",
+    "makeUser": "Make user",
+    "lock": "Lock",
+    "unlock": "Unlock",
+    "delete": "Delete",
+    "deletedTag": "Deleted",
+    "lockedTag": "Locked",
+    "unverifiedTag": "Unverified",
+    "roleChanged": "Role updated.",
+    "deleted": "User deleted.",
+    "deleteTitle": "Delete user",
+    "deleteConfirm": "Delete {email}? This revokes their sessions and marks the account deleted.",
+    "pageInfo": "Page {page} of {total}",
+    "prev": "Previous",
+    "next": "Next"
   },
   "errors": {
     "notFound": {

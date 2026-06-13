@@ -70,6 +70,32 @@ export type SessionDto = z.infer<typeof sessionDtoSchema>;
 export const sessionListSchema = z.array(sessionDtoSchema);
 export type SessionList = z.infer<typeof sessionListSchema>;
 
+// --- admin user management ---------------------------------------------
+export const adminUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  name: z.string(),
+  role: RoleEnum,
+  emailVerified: z.boolean(),
+  twoFactorEnabled: z.boolean(),
+  locked: z.boolean(),
+  deleted: z.boolean(),
+  createdAt: z.string(),
+});
+export type AdminUser = z.infer<typeof adminUserSchema>;
+
+export const adminUserListSchema = z.object({
+  items: z.array(adminUserSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  limit: z.number().int(),
+  totalPages: z.number().int(),
+});
+export type AdminUserList = z.infer<typeof adminUserListSchema>;
+
+export const updateRoleSchema = z.object({ role: RoleEnum });
+export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
+
 /** A single audit-log entry as exposed to the data subject (LGPD export). */
 export const auditLogEntrySchema = z.object({
   id: z.string(),

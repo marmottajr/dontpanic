@@ -17,6 +17,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { TwoFactorGateGuard } from './modules/auth/guards/two-factor-gate.guard';
 import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -72,6 +73,7 @@ import { AppService } from './app.service';
     AuthModule,
     UsersModule,
     FilesModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
