@@ -19,6 +19,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yml,yaml}\"",
     "audit": "pnpm audit --audit-level high",
     "changeset": "changeset",
+    "release": "changeset publish",
     "prepare": "husky"
   },
   "lint-staged": {

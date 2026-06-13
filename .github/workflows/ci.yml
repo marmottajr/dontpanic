@@ -70,7 +70,6 @@ jobs:
 
       - name: Audit (fail on high/critical)
         run: pnpm audit --audit-level high
-        continue-on-error: true
 
       - name: Build
         run: pnpm build
