@@ -1,3 +1,6 @@
+// Sentry must initialise before anything it instruments — keep this import first.
+import './instrument';
+import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ConfigService } from '@nestjs/config';
@@ -15,7 +18,13 @@ import type { Env } from './config/env';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: true }),
+    new FastifyAdapter({
+      trustProxy: true,
+      // Honour an inbound x-request-id (from an upstream proxy) or mint one, so
+      // every log line and error envelope shares a single correlation id.
+      requestIdHeader: 'x-request-id',
+      genReqId: () => randomUUID(),
+    }),
     { bufferLogs: true },
   );
 
@@ -52,6 +61,13 @@ async function bootstrap(): Promise<void> {
   // does nothing until attached. Enforce double-submit on every unsafe method.
   // preHandler (not onRequest) so the token may also arrive in the parsed body.
   const fastify = app.getHttpAdapter().getInstance();
+
+  // Echo the correlation id back so clients and proxies can stitch logs together.
+  fastify.addHook('onRequest', (req, reply, done) => {
+    void reply.header('x-request-id', req.id);
+    done();
+  });
+
   const csrfProtection = (fastify as unknown as { csrfProtection: preHandlerHookHandler })
     .csrfProtection;
   fastify.addHook('preHandler', (req, reply, done) => {

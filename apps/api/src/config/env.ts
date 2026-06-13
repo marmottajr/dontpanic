@@ -72,6 +72,7 @@ export const envSchema = z.object({
 
   // --- observability ---
   SENTRY_DSN: z.string().default(''),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
 });
 
 export type Env = z.infer<typeof envSchema>;

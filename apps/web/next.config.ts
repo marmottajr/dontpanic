@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
+import { withSentryConfig } from '@sentry/nextjs';
 
 const require = createRequire(import.meta.url);
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
@@ -13,8 +14,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 // cannot resolve `zod/v4/core`. We alias it to the zod actually installed for
 // this app. Turbopack expects the alias value to be a project-root-relative
 // path (starting with `./`), so we relativise the resolved location.
-const zodV4Core =
-  './' + path.relative(import.meta.dirname, require.resolve('zod/v4/core'));
+const zodV4Core = './' + path.relative(import.meta.dirname, require.resolve('zod/v4/core'));
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -28,4 +28,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+// Sentry wraps the build. Inert at runtime unless NEXT_PUBLIC_SENTRY_DSN /
+// SENTRY_DSN are set (see sentry.*.config.ts); source-map upload only runs when
+// SENTRY_AUTH_TOKEN is present, so builds without it simply skip that step.
+export default withSentryConfig(withNextIntl(nextConfig), {
+  silent: !process.env.CI,
+});

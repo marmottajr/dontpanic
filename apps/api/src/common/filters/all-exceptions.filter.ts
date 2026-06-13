@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import * as Sentry from '@sentry/node';
 import type { ApiErrorBody } from '@dontpanic/shared';
 import { marvinQuip } from '../marvin';
 
@@ -42,6 +43,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (status >= 500) {
       // Log the real cause server-side; never expose it to the client.
       this.logger.error(exception instanceof Error ? exception.stack : String(exception));
+      // Ship it to Sentry too (no-op when SENTRY_DSN is unset).
+      Sentry.captureException(exception);
       message = 'Internal server error';
     }
 
