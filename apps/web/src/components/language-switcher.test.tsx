@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // --- mocks for the Next/next-intl/server-action surface ---------------------
@@ -34,7 +34,10 @@ describe('LanguageSwitcher', () => {
   it('shows the current locale flag and short label in the trigger', () => {
     render(<LanguageSwitcher />);
     const trigger = screen.getByRole('button', { name: 'Language' });
-    expect(trigger).toHaveTextContent(localeMeta['pt-BR'].flag);
+    // the flag is an inline SVG (works on every OS), exposed as role="img"
+    expect(
+      within(trigger).getByRole('img', { name: localeMeta['pt-BR'].label }),
+    ).toBeInTheDocument();
     expect(trigger).toHaveTextContent(localeMeta['pt-BR'].short); // "PT"
   });
 
@@ -42,7 +45,9 @@ describe('LanguageSwitcher', () => {
     currentLocale = 'en-US';
     render(<LanguageSwitcher />);
     const trigger = screen.getByRole('button', { name: 'Language' });
-    expect(trigger).toHaveTextContent(localeMeta['en-US'].flag);
+    expect(
+      within(trigger).getByRole('img', { name: localeMeta['en-US'].label }),
+    ).toBeInTheDocument();
     expect(trigger).toHaveTextContent('EN');
   });
 
@@ -64,8 +69,12 @@ describe('LanguageSwitcher', () => {
     // both locales appear as menu items with their human label + flag
     const ptItem = await findItemByLabel(localeMeta['pt-BR'].label);
     const enItem = await findItemByLabel(localeMeta['en-US'].label);
-    expect(ptItem).toHaveTextContent(localeMeta['pt-BR'].flag);
-    expect(enItem).toHaveTextContent(localeMeta['en-US'].flag);
+    expect(
+      within(ptItem).getByRole('img', { name: localeMeta['pt-BR'].label }),
+    ).toBeInTheDocument();
+    expect(
+      within(enItem).getByRole('img', { name: localeMeta['en-US'].label }),
+    ).toBeInTheDocument();
   });
 
   it('calls setLocale + router.refresh when a new locale is chosen', async () => {
