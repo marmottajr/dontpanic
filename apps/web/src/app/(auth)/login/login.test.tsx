@@ -119,7 +119,9 @@ describe('LoginPage', () => {
 
   it('shows an inline error on invalid (401) credentials', async () => {
     const user = userEvent.setup();
-    apiMock.mockRejectedValueOnce(new ApiError(401, { message: 'nope' }));
+    apiMock.mockRejectedValueOnce(
+      new ApiError(401, { statusCode: 401, error: 'Unauthorized', message: 'nope' }),
+    );
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');
@@ -149,7 +151,7 @@ describe('LoginPage', () => {
 
   it('toasts a generic error on an unexpected failure', async () => {
     const user = userEvent.setup();
-    apiMock.mockRejectedValueOnce(new ApiError(500, { message: 'boom' }));
+    apiMock.mockRejectedValueOnce(new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }));
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');
@@ -161,7 +163,9 @@ describe('LoginPage', () => {
 
   it('shows the lockout message on a 423 response', async () => {
     const user = userEvent.setup();
-    apiMock.mockRejectedValueOnce(new ApiError(423, { message: 'locked' }));
+    apiMock.mockRejectedValueOnce(
+      new ApiError(423, { statusCode: 423, error: 'Locked', message: 'locked' }),
+    );
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');
@@ -201,7 +205,9 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     apiMock
       .mockResolvedValueOnce({ twoFactorRequired: true, ticket: 'tkt-1' })
-      .mockRejectedValueOnce(new ApiError(401, { message: 'bad code' }));
+      .mockRejectedValueOnce(
+        new ApiError(401, { statusCode: 401, error: 'Unauthorized', message: 'bad code' }),
+      );
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');
@@ -220,7 +226,7 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     apiMock
       .mockResolvedValueOnce({ twoFactorRequired: true, ticket: 'tkt-1' })
-      .mockRejectedValueOnce(new ApiError(500, { message: 'boom' }));
+      .mockRejectedValueOnce(new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }));
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');

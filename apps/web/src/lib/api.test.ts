@@ -167,7 +167,7 @@ describe('api()', () => {
       jsonResponse(422, { message: 'Validation failed', code: 'BAD' }),
     );
 
-    const err = await api('/users/me').catch((e) => e);
+    const err = (await api('/users/me').catch((e) => e)) as ApiErrorType;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(422);
     expect(err.body).toEqual({ message: 'Validation failed', code: 'BAD' });
@@ -177,7 +177,7 @@ describe('api()', () => {
 
   it('falls back to a generic message when the error body has none', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(500, {}));
-    const err = await api('/users/me').catch((e) => e);
+    const err = (await api('/users/me').catch((e) => e)) as ApiErrorType;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.message).toContain('500');
   });
@@ -216,7 +216,7 @@ describe('apiUpload()', () => {
       .mockResolvedValueOnce(jsonResponse(413, { message: 'Too large' }));
 
     const fd = new FormData();
-    const err = await apiUpload('/files/avatar', fd).catch((e) => e);
+    const err = (await apiUpload('/files/avatar', fd).catch((e) => e)) as ApiErrorType;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(413);
     expect(err.body).toEqual({ message: 'Too large' });

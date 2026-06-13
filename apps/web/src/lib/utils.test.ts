@@ -11,7 +11,8 @@ describe('cn', () => {
   });
 
   it('drops falsy/conditional values', () => {
-    expect(cn('text-sm', false && 'hidden', undefined, null, 'font-bold')).toBe(
+    const show = false as boolean;
+    expect(cn('text-sm', show && 'hidden', undefined, null, 'font-bold')).toBe(
       'text-sm font-bold',
     );
   });
