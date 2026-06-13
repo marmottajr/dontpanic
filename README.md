@@ -27,13 +27,35 @@ pnpm --filter @dontpanic/api db:seed
 pnpm dev
 ```
 
-| Service | URL |
-|---|---|
-| Web | http://localhost:4200 |
-| API | http://localhost:4201 |
-| API docs (Swagger) | http://localhost:4201/docs |
-| Mailpit (e-mails de dev) | http://localhost:4207 |
-| MinIO console | http://localhost:4205 |
+| Service                  | URL                        |
+| ------------------------ | -------------------------- |
+| Web                      | http://localhost:4200      |
+| API                      | http://localhost:4201      |
+| API docs (Swagger)       | http://localhost:4201/docs |
+| Mailpit (e-mails de dev) | http://localhost:4207      |
+| MinIO console            | http://localhost:4205      |
+
+Seeded admin login: **admin@dontpanic.dev** / **DontPanic42!**
+
+## Test
+
+```bash
+pnpm test                                # all unit + component suites (turbo)
+pnpm --filter @dontpanic/api test:e2e    # backend e2e (real test database)
+```
+
+276 tests — ~99% backend statements, 100% web statements. CI runs lint →
+typecheck → migrate → test → audit → build on every push.
+
+## Run everything in Docker (hot-reload via bind-mount)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+The default `docker compose up -d` runs only the infra (Postgres/Redis/MinIO/
+Mailpit) with the apps on your host. The override above also runs the API + Web
+in containers with the repo bind-mounted, so edits hot-reload inside Docker.
 
 ## Architecture
 

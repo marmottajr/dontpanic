@@ -16,9 +16,11 @@ docker compose up -d          # postgres, redis, minio, mailpit
 pnpm install
 pnpm --filter @dontpanic/shared build      # contratos compartilhados
 pnpm --filter @dontpanic/api db:migrate     # cria o schema
-pnpm --filter @dontpanic/api db:seed        # usuário admin inicial
-pnpm dev                       # API :3001  ·  Web :3000
+pnpm --filter @dontpanic/api db:seed        # cria o admin inicial
+pnpm dev                       # API :4201 · Web :4200  (Don't Panic.)
 ```
+
+Admin do seed: **admin@dontpanic.dev** / **DontPanic42!**
 
 Serviços de dev (portas no range **42xx**): Web `:4200` · API `:4201` ·
 Swagger `:4201/docs` · Postgres `:4202` · Redis `:4203` · MinIO `:4204` /
@@ -47,12 +49,12 @@ Zod, então api e web nunca divergem. Mudou o contrato? Edite em `packages/share
 O domínio depende de **interfaces (ports)**; o que é externo é um **adapter** plugável por env.
 Trocar de provider = trocar uma variável, sem tocar na lógica.
 
-| Recurso  | Port                | Adapters                         | Env             |
-|----------|---------------------|----------------------------------|-----------------|
-| Storage  | `StorageProvider`   | `s3` (AWS/MinIO/R2), `local`     | `STORAGE_DRIVER`|
-| E-mail   | `MailProvider`      | `smtp`, `ses`, `console`         | `MAIL_DRIVER`   |
-| Cache    | `CacheProvider`     | `redis`, `memory`                | `CACHE_DRIVER`  |
-| Banco    | repos + Prisma adapter | `postgresql`, `mysql`, `sqlite` | `DB_PROVIDER`   |
+| Recurso | Port                   | Adapters                        | Env              |
+| ------- | ---------------------- | ------------------------------- | ---------------- |
+| Storage | `StorageProvider`      | `s3` (AWS/MinIO/R2), `local`    | `STORAGE_DRIVER` |
+| E-mail  | `MailProvider`         | `smtp`, `ses`, `console`        | `MAIL_DRIVER`    |
+| Cache   | `CacheProvider`        | `redis`, `memory`               | `CACHE_DRIVER`   |
+| Banco   | repos + Prisma adapter | `postgresql`, `mysql`, `sqlite` | `DB_PROVIDER`    |
 
 - Adapters ficam em `apps/api/src/infra/**`; ports em `apps/api/src/core/**`.
 - Banco usa **Prisma 7 driver adapters** (`@prisma/adapter-pg` p/ Postgres). Trocar o banco =
@@ -72,18 +74,18 @@ Trocar de provider = trocar uma variável, sem tocar na lógica.
 
 ## Comandos
 
-| Ação | Comando |
-|---|---|
-| Dev (tudo) | `pnpm dev` |
-| Build | `pnpm build` |
-| Lint | `pnpm lint` |
-| Typecheck | `pnpm typecheck` |
-| Testes (unit) | `pnpm test` |
-| Testes e2e | `pnpm test:e2e` |
-| Migration | `pnpm --filter @dontpanic/api db:migrate` |
-| Seed | `pnpm --filter @dontpanic/api db:seed` |
-| Prisma Studio | `pnpm --filter @dontpanic/api db:studio` |
-| Auditoria deps | `pnpm audit` |
+| Ação           | Comando                                   |
+| -------------- | ----------------------------------------- |
+| Dev (tudo)     | `pnpm dev`                                |
+| Build          | `pnpm build`                              |
+| Lint           | `pnpm lint`                               |
+| Typecheck      | `pnpm typecheck`                          |
+| Testes (unit)  | `pnpm test`                               |
+| Testes e2e     | `pnpm test:e2e`                           |
+| Migration      | `pnpm --filter @dontpanic/api db:migrate` |
+| Seed           | `pnpm --filter @dontpanic/api db:seed`    |
+| Prisma Studio  | `pnpm --filter @dontpanic/api db:studio`  |
+| Auditoria deps | `pnpm audit`                              |
 
 ---
 
@@ -96,11 +98,24 @@ Trocar de provider = trocar uma variável, sem tocar na lógica.
 - Use os componentes de `apps/web/src/components/ui` (shadcn). Layout muda por **tokens CSS**, não por edição das telas.
 
 ## Política de dependências
+
 - Sempre a **versão mais recente**; cai para a anterior só se houver **CVE conhecida**.
 - `pnpm audit` roda no CI. `minimumReleaseAge` no `pnpm-workspace.yaml` evita adotar releases recém-publicados (supply-chain).
 - Build scripts nativos são aprovados explicitamente em `allowBuilds` / `onlyBuiltDependencies`.
 
 ---
+
+## Testes (cobertura máxima)
+
+- **Backend (Jest + ts-jest)** — unit `pnpm --filter @dontpanic/api test` (mocka Prisma/cache/mail/storage; ~99% stmts / 95% branches); e2e `pnpm --filter @dontpanic/api test:e2e` (sobe o Nest contra um Postgres de teste `dontpanic_e2e` — fluxos register→verify→login→refresh→logout, 2FA, lockout, CSRF).
+- **Frontend (Vitest 4 + Vite 8 + Testing Library)** — `pnpm --filter @dontpanic/web test` (kit de UI, cliente BFF com CSRF/refresh, paridade de chaves i18n, tela de login). 100% stmts.
+- **Tudo** — `pnpm test` (turbo). Thresholds de cobertura aplicados. **Storybook**: `pnpm --filter @dontpanic/web storybook` (:4208) ou `build-storybook`.
+
+## Docker — dois modos
+
+1. **Infra no Docker, apps no host (padrão, mais rápido):** `docker compose up -d` sobe Postgres/Redis/MinIO/Mailpit (portas 42xx); os apps rodam no host com `pnpm dev`.
+2. **Tudo no Docker, hot-reload por volume:** `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` — API e Web em containers com o repo montado por **bind-mount** (`Dockerfile.dev`, sem copiar código); editar na máquina reflete no container. Lá dentro os apps acham a infra pelo nome do serviço (`postgres:5432`…).
+3. **Produção:** `Dockerfile.api` / `Dockerfile.web` (multi-stage, com `COPY` — imagens imutáveis).
 
 ## Humor (com parcimônia)
 
@@ -112,6 +127,7 @@ nem aparece em erro de segurança real. Mantenha sóbrio onde importa.
 ---
 
 ## O que NÃO fazer
+
 - Não logar segredos, tokens ou senhas. Não colocar humor em mensagens que exponham internals.
 - Não acessar a API direto do browser — sempre pelo BFF proxy.
 - Não duplicar contrato: schema vive só em `@dontpanic/shared`.

@@ -21,6 +21,9 @@
     "changeset": "changeset",
     "prepare": "husky"
   },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,cjs,js,jsx,json,md,yml,yaml,css}": "prettier --write"
+  },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
     "@commitlint/cli": "21.0.2",
