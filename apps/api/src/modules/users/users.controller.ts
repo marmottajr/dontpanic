@@ -13,12 +13,14 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import type {
   MessageResponse,
+  SecurityStatus,
   TwoFactorEnableResponse,
   TwoFactorSetupResponse,
   UserDataExport,
   UserDto,
 } from '@dontpanic/shared';
 import { CurrentUser, type AuthUser } from '../../common/decorators/current-user.decorator';
+import { SkipTwoFactorGate } from '../../common/decorators/skip-two-factor-gate.decorator';
 import { UsersService, type RequestContext } from './services/users.service';
 import {
   ChangePasswordDto,
@@ -43,17 +45,22 @@ export class UsersController {
   }
 
   @Get('me')
+  @SkipTwoFactorGate()
   @ApiOperation({ summary: "Get the current user's profile" })
   async me(@CurrentUser() user: AuthUser): Promise<UserDto> {
     return this.users.getProfile(user.id);
   }
 
+  @Get('me/security')
+  @SkipTwoFactorGate()
+  @ApiOperation({ summary: '2FA onboarding status (enabled / required / should-prompt)' })
+  async security(@CurrentUser() user: AuthUser): Promise<SecurityStatus> {
+    return this.users.getSecurityStatus(user.id);
+  }
+
   @Patch('me')
   @ApiOperation({ summary: "Update the current user's profile (name)" })
-  async updateMe(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: UpdateProfileDto,
-  ): Promise<UserDto> {
+  async updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto): Promise<UserDto> {
     return this.users.updateProfile(user.id, dto);
   }
 
@@ -70,6 +77,7 @@ export class UsersController {
   }
 
   @Post('me/2fa/setup')
+  @SkipTwoFactorGate()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Begin 2FA setup: returns a secret, otpauth URI and QR code' })
   async setupTwoFactor(@CurrentUser() user: AuthUser): Promise<TwoFactorSetupResponse> {
@@ -77,6 +85,7 @@ export class UsersController {
   }
 
   @Post('me/2fa/enable')
+  @SkipTwoFactorGate()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Enable 2FA by verifying a code; returns one-time backup codes' })
   async enableTwoFactor(
@@ -86,6 +95,15 @@ export class UsersController {
   ): Promise<TwoFactorEnableResponse> {
     const backupCodes = await this.users.enableTwoFactor(user.id, dto, this.ctx(req));
     return { backupCodes };
+  }
+
+  @Post('me/2fa/snooze')
+  @SkipTwoFactorGate()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Dismiss the 2FA prompt for 24h (optional mode)' })
+  async snoozeTwoFactor(@CurrentUser() user: AuthUser): Promise<MessageResponse> {
+    await this.users.snoozeTwoFactorPrompt(user.id);
+    return { message: "We'll remind you about 2FA tomorrow. Don't Panic." };
   }
 
   @Post('me/2fa/disable')

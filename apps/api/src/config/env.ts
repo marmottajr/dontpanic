@@ -28,6 +28,9 @@ export const envSchema = z.object({
   API_PUBLIC_URL: z.string().default('http://localhost:3001'),
 
   TOTP_ISSUER: z.string().default('DontPanic'),
+  // true: 2FA is mandatory — users must set it up right after verifying email
+  // and can't use the app without it. false: a snoozable prompt on first login.
+  TWO_FACTOR_REQUIRED: boolish(false),
 
   // --- drivers (hexagonal) ---
   STORAGE_DRIVER: z.enum(['s3', 'local']).default('s3'),

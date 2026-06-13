@@ -18,7 +18,10 @@ import type {
   UpdateProfileInput,
   UserDataExport,
   UserDto,
+  SecurityStatus,
 } from '@dontpanic/shared';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
 import { TwoFactorService } from '../../auth/services/two-factor.service';
@@ -42,6 +45,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly twoFactor: TwoFactorService,
     private readonly tokenService: TokenService,
+    private readonly config: ConfigService<Env, true>,
     @Inject(CACHE_PROVIDER) private readonly cache: CacheProvider,
   ) {}
 
@@ -91,6 +95,27 @@ export class UsersService {
 
   private pendingSecretKey(userId: string): string {
     return `2fa:pending:${userId}`;
+  }
+
+  /** Drives the 2FA onboarding on the client (forced setup vs snoozable prompt). */
+  async getSecurityStatus(userId: string): Promise<SecurityStatus> {
+    const user = await this.requireActiveUser(userId);
+    const twoFactorRequired = this.config.get('TWO_FACTOR_REQUIRED', { infer: true });
+    const remindDue = !user.twoFactorRemindAt || user.twoFactorRemindAt <= new Date();
+    return {
+      twoFactorEnabled: user.twoFactorEnabled,
+      twoFactorRequired,
+      shouldPrompt: !user.twoFactorEnabled && !twoFactorRequired && remindDue,
+    };
+  }
+
+  /** "Not now": don't nudge again about 2FA for 24h. */
+  async snoozeTwoFactorPrompt(userId: string): Promise<void> {
+    await this.requireActiveUser(userId);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorRemindAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    });
   }
 
   async setupTwoFactor(userId: string): Promise<TwoFactorSetupResponse> {

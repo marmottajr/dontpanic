@@ -12,6 +12,7 @@ import { MailModule } from './infra/mail/mail.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { TwoFactorGateGuard } from './modules/auth/guards/two-factor-gate.guard';
 import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AppController } from './app.controller';
@@ -74,6 +75,7 @@ import { AppService } from './app.service';
     // Order matters: throttle first (cheap, pre-auth), then authenticate.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: TwoFactorGateGuard },
   ],
 })
 export class AppModule {}

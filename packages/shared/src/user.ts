@@ -18,6 +18,14 @@ export const userDtoSchema = z.object({
 });
 export type UserDto = z.infer<typeof userDtoSchema>;
 
+/** Drives the 2FA onboarding: forced setup (required) or a snoozable prompt. */
+export const securityStatusSchema = z.object({
+  twoFactorEnabled: z.boolean(),
+  twoFactorRequired: z.boolean(),
+  shouldPrompt: z.boolean(),
+});
+export type SecurityStatus = z.infer<typeof securityStatusSchema>;
+
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(120).optional(),
 });

@@ -22,6 +22,7 @@ model User {
   emailVerified       Boolean   @default(false)
   twoFactorEnabled    Boolean   @default(false)
   twoFactorSecret     String?
+  twoFactorRemindAt   DateTime? // optional-mode: when to next nudge about enabling 2FA
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
   createdAt           DateTime  @default(now())

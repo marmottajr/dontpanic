@@ -158,6 +158,29 @@
     "konamiTitle": "🐬 Tchau, e obrigado pelos peixes.",
     "konamiDescription": "Marvin: “Cérebro do tamanho de um planeta, e me pedem para renderizar um toast.”"
   },
+  "twoFactorPrompt": {
+    "title": "Proteja sua conta com 2FA",
+    "body": "A verificação em duas etapas adiciona uma camada extra de segurança: mesmo que sua senha vaze, ninguém entra sem o código do seu app autenticador.",
+    "enable": "Ativar 2FA",
+    "later": "Agora não",
+    "requiredTitle": "Ative o 2FA para continuar",
+    "requiredBody": "Este sistema exige verificação em duas etapas. Configure-a abaixo para acessar sua conta."
+  },
+  "twoFactorSetup": {
+    "scanTitle": "Escaneie o QR code",
+    "scanBody": "Use seu app autenticador (Google Authenticator, Authy, 1Password…) e digite o código gerado.",
+    "secretLabel": "Ou insira esta chave manualmente:",
+    "copied": "Chave copiada!",
+    "codeLabel": "Código de verificação",
+    "enable": "Ativar",
+    "enabled": "2FA ativado!",
+    "invalidCode": "Código inválido. Tente novamente.",
+    "error": "Não foi possível iniciar o 2FA. Tente novamente.",
+    "backupTitle": "Salve seus códigos de backup",
+    "backupBody": "Guarde-os em local seguro. Cada um funciona uma vez, caso você perca o acesso ao app.",
+    "download": "Baixar códigos",
+    "done": "Concluir"
+  },
   "validation": {
     "required": "Campo obrigatório",
     "email": "E-mail inválido",

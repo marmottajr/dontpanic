@@ -9,6 +9,7 @@ import type {
   UserDto,
 } from '@dontpanic/shared';
 import { Public } from '../../common/decorators/public.decorator';
+import { SkipTwoFactorGate } from '../../common/decorators/skip-two-factor-gate.decorator';
 import { AuthService, type RequestContext } from './services/auth.service';
 import { CookieService, REFRESH_COOKIE } from './support/cookies';
 import {
@@ -115,6 +116,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @SkipTwoFactorGate()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Revoke the current refresh token and clear cookies' })
   async logout(

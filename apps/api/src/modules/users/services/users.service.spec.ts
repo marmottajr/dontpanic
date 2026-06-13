@@ -17,6 +17,7 @@ describe('UsersService', () => {
   let twoFactor: any;
   let tokenService: any;
   let cache: any;
+  let config: any;
   let service: UsersService;
 
   const mockedArgon = argon2 as jest.Mocked<typeof argon2>;
@@ -27,7 +28,10 @@ describe('UsersService', () => {
 
     prisma = {
       user: { findUnique: jest.fn(), update: jest.fn() },
-      auditLog: { create: jest.fn().mockResolvedValue({}), findMany: jest.fn().mockResolvedValue([]) },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       twoFactorBackupCode: { deleteMany: jest.fn() },
       $transaction: jest.fn().mockResolvedValue([]),
     };
@@ -48,7 +52,54 @@ describe('UsersService', () => {
       del: jest.fn().mockResolvedValue(undefined),
     };
 
-    service = new UsersService(prisma, twoFactor, tokenService, cache);
+    config = { get: jest.fn().mockReturnValue(false) }; // 2FA optional by default
+    service = new UsersService(prisma, twoFactor, tokenService, config, cache);
+  });
+
+  describe('getSecurityStatus', () => {
+    const baseUser = {
+      id: 'u1',
+      email: 'a@b.com',
+      twoFactorEnabled: false,
+      twoFactorRemindAt: null,
+      deletedAt: null,
+    };
+
+    it('prompts when 2FA is optional, disabled and not snoozed', async () => {
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      const s = await service.getSecurityStatus('u1');
+      expect(s).toEqual({ twoFactorEnabled: false, twoFactorRequired: false, shouldPrompt: true });
+    });
+
+    it('does not prompt while the 24h snooze is active', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...baseUser,
+        twoFactorRemindAt: new Date(Date.now() + 3_600_000),
+      });
+      expect((await service.getSecurityStatus('u1')).shouldPrompt).toBe(false);
+    });
+
+    it('never prompts when 2FA is required (forced setup instead)', async () => {
+      prisma.user.findUnique.mockResolvedValue(baseUser);
+      config.get.mockReturnValue(true);
+      const s = await service.getSecurityStatus('u1');
+      expect(s).toEqual({ twoFactorEnabled: false, twoFactorRequired: true, shouldPrompt: false });
+    });
+
+    it('does not prompt once 2FA is enabled', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...baseUser, twoFactorEnabled: true });
+      expect((await service.getSecurityStatus('u1')).shouldPrompt).toBe(false);
+    });
+  });
+
+  describe('snoozeTwoFactorPrompt', () => {
+    it('pushes the next reminder ~24h ahead', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', deletedAt: null });
+      await service.snoozeTwoFactorPrompt('u1');
+      const arg = prisma.user.update.mock.calls[0][0];
+      expect(arg.where).toEqual({ id: 'u1' });
+      expect(arg.data.twoFactorRemindAt.getTime()).toBeGreaterThan(Date.now() + 23 * 3_600_000);
+    });
   });
 
   // --- requireActiveUser (via getProfile) --------------------------------
@@ -135,18 +186,18 @@ describe('UsersService', () => {
     it('rejects when there is no pending setup', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', twoFactorEnabled: false }));
       cache.get.mockResolvedValue(null);
-      await expect(
-        service.enableTwoFactor('u1', { code: '123456' } as never, ctx),
-      ).rejects.toThrow(/start setup again/);
+      await expect(service.enableTwoFactor('u1', { code: '123456' } as never, ctx)).rejects.toThrow(
+        /start setup again/,
+      );
     });
 
     it('rejects an invalid verification code', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', twoFactorEnabled: false }));
       cache.get.mockResolvedValue('PENDING');
       twoFactor.verifyTotp.mockResolvedValue(false);
-      await expect(
-        service.enableTwoFactor('u1', { code: '000000' } as never, ctx),
-      ).rejects.toThrow('Invalid verification code');
+      await expect(service.enableTwoFactor('u1', { code: '000000' } as never, ctx)).rejects.toThrow(
+        'Invalid verification code',
+      );
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
@@ -181,9 +232,9 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(
         makeUser({ id: 'u1', twoFactorEnabled: true, twoFactorSecret: 'SECRET' }),
       );
-      await expect(
-        service.disableTwoFactor('u1', {} as never, ctx),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.disableTwoFactor('u1', {} as never, ctx)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
 
     it('disables via a valid TOTP code and clears secret + backup codes', async () => {

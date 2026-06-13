@@ -158,6 +158,29 @@
     "konamiTitle": "🐬 So long, and thanks for all the fish.",
     "konamiDescription": "Marvin: “Brain the size of a planet, and they ask me to render a toast.”"
   },
+  "twoFactorPrompt": {
+    "title": "Secure your account with 2FA",
+    "body": "Two-factor authentication adds a layer of security: even if your password leaks, nobody gets in without the code from your authenticator app.",
+    "enable": "Enable 2FA",
+    "later": "Not now",
+    "requiredTitle": "Enable 2FA to continue",
+    "requiredBody": "This system requires two-factor authentication. Set it up below to access your account."
+  },
+  "twoFactorSetup": {
+    "scanTitle": "Scan the QR code",
+    "scanBody": "Use your authenticator app (Google Authenticator, Authy, 1Password…) and enter the generated code.",
+    "secretLabel": "Or enter this key manually:",
+    "copied": "Key copied!",
+    "codeLabel": "Verification code",
+    "enable": "Enable",
+    "enabled": "2FA enabled!",
+    "invalidCode": "Invalid code. Try again.",
+    "error": "Couldn't start 2FA setup. Try again.",
+    "backupTitle": "Save your backup codes",
+    "backupBody": "Store them somewhere safe. Each works once if you lose access to your app.",
+    "download": "Download codes",
+    "done": "Finish"
+  },
   "validation": {
     "required": "Required field",
     "email": "Invalid email",
