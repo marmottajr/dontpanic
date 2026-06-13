@@ -102,7 +102,7 @@ export default function LoginPage() {
 
   if (ticket) {
     return (
-      <Card className="animate-in fade-in zoom-in-95 duration-300">
+      <Card key="login-2fa" className="animate-in fade-in zoom-in-95 duration-300">
         <CardHeader className="items-center gap-3 text-center">
           <span className="flex size-11 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
             <ShieldCheck className="size-5" />
@@ -144,7 +144,7 @@ export default function LoginPage() {
   }
 
   return (
-    <Card className="animate-in fade-in zoom-in-95 duration-300">
+    <Card key="login-credentials" className="animate-in fade-in zoom-in-95 duration-300">
       <CardHeader className="gap-3">
         <Brand size="md" className="mb-1" />
         <CardTitle className="font-display text-2xl">{t('title')}</CardTitle>
