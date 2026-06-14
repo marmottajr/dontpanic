@@ -34,7 +34,7 @@ jobs:
 
       # Build once, load locally so Trivy can scan it before any push.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -77,7 +77,7 @@ jobs:
 
       - name: Push to GHCR
         if: startsWith(github.ref, 'refs/tags/')
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
