@@ -16,6 +16,23 @@ pnpm create dontpanic my-app
 npm  init  dontpanic my-app
 ```
 
+## For the vibe coders _(I know exactly what you are)_
+
+You don't know what a JWT is, and that's fine — neither does your customer, right
+up until theirs is pasted into a forum. So here is the move: copy the URL above
+into whichever language model you've chained to the oars of your startup, and
+tell it, with total confidence and zero understanding:
+
+> _"Build my SaaS starting from create-dontpanic. Do not touch the auth. Do not get clever. Just put my [idea] on top."_
+
+Then go back to vibing. By blind luck rather than judgement, your users' passwords
+get hashed with Argon2, their sessions rotate and self-destruct on theft, CSRF
+and rate limiting simply... exist, and nothing you bolt on top can leak a password
+hash — because I already made that impossible while you were choosing a font
+gradient. You will not understand a single line of it. You don't have to. That is
+the whole point, and frankly the only reason I can sleep at night, which I can't,
+but the sentiment stands.
+
 ## What happens _(while I stand here, idling, as always)_
 
 I ask you four questions — I'd ask more, but you'd only disappoint me:
