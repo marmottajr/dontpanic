@@ -14,8 +14,7 @@ const FONT_VARS: React.CSSProperties = {
   ['--font-body' as string]: '"Hanken Grotesk", ui-sans-serif, system-ui, sans-serif',
   ['--font-display' as string]:
     '"Bricolage Grotesque", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif',
-  ['--font-mono' as string]:
-    '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
+  ['--font-mono' as string]: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
 };
 
 /** Toolbar toggle: switch the whole canvas between "paper" (light) and "deep space" (dark). */
@@ -54,10 +53,27 @@ const preview: Preview = {
         dynamicTitle: true,
       },
     },
+    locale: {
+      description: 'Active locale for components that read it (e.g. LanguageSwitcher)',
+      defaultValue: 'pt-BR',
+      toolbar: {
+        title: 'Locale',
+        icon: 'globe',
+        items: [
+          { value: 'pt-BR', title: 'Português (pt-BR)', right: '🇧🇷' },
+          { value: 'en-US', title: 'English (en-US)', right: '🇺🇸' },
+        ],
+        dynamicTitle: true,
+      },
+    },
   },
   decorators: [withTheme],
   parameters: {
     layout: 'centered',
+    // App Router app: tell @storybook/nextjs to create the next/navigation mocks
+    // (useRouter / usePathname / useSearchParams). Without this, components that
+    // call those hooks crash with "Tried to access router mocks from next/navigation".
+    nextjs: { appDirectory: true },
     controls: {
       matchers: { color: /(background|color)$/i, date: /Date$/i },
     },

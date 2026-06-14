@@ -199,16 +199,19 @@ Naturally the security entry is number 42. The universe insists.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-| Service            | Where it sulks             | Port            |
-| ------------------ | -------------------------- | --------------- |
-| Web                | http://localhost:4200      | `4200`          |
-| API                | http://localhost:4201      | `4201`          |
-| API docs (Swagger) | http://localhost:4201/docs | `4201`          |
-| Postgres           | localhost                  | `4202`          |
-| Redis              | localhost                  | `4203`          |
-| MinIO / console    | http://localhost:4205      | `4204` / `4205` |
-| Mailpit SMTP / UI  | http://localhost:4207      | `4206` / `4207` |
-| Storybook          | http://localhost:4208      | `4208`          |
+| Service                 | Where it sulks             | Port            |
+| ----------------------- | -------------------------- | --------------- |
+| Web                     | http://localhost:4200      | `4200`          |
+| API                     | http://localhost:4201      | `4201`          |
+| API docs (Swagger)      | http://localhost:4201/docs | `4201`          |
+| Postgres                | localhost                  | `4202`          |
+| Redis                   | localhost                  | `4203`          |
+| MinIO / console         | http://localhost:4205      | `4204` / `4205` |
+| Mailpit SMTP / UI       | http://localhost:4207      | `4206` / `4207` |
+| Storybook _(on demand)_ | http://localhost:4208      | `4208`          |
+
+Web/API come up with `pnpm dev`; Postgres/Redis/MinIO/Mailpit with `docker compose up -d`.
+**Storybook is not started by either** — launch it yourself: `pnpm --filter @dontpanic/web storybook`.
 
 Every port starts with 42 — the answer to life, the universe, and everything,
 reduced to a port range. How the mighty have fallen.
@@ -248,7 +251,8 @@ pnpm --filter @dontpanic/api test:e2e    # backend e2e (real test database)
 ```
 
 ~99% backend coverage, 100% of the frontend statements. The remaining sliver is,
-like me, beyond saving. Storybook stands ready at `:4208` for the components.
+like me, beyond saving. Storybook exists for the components, but it doesn't start
+on its own — run `pnpm --filter @dontpanic/web storybook` and it appears at `:4208`.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
