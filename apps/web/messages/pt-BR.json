@@ -184,7 +184,15 @@
     "deleteConfirm": "Excluir {email}? Isso revoga as sessões e marca a conta como excluída.",
     "pageInfo": "Página {page} de {total}",
     "prev": "Anterior",
-    "next": "Próxima"
+    "next": "Próxima",
+    "newUser": "Novo usuário",
+    "create": {
+      "title": "Novo usuário",
+      "subtitle": "A conta é criada já verificada.",
+      "role": "Papel",
+      "submit": "Criar usuário",
+      "created": "Usuário criado."
+    }
   },
   "errors": {
     "notFound": {

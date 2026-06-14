@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { CreateUserDialog } from '@/components/admin/create-user-dialog';
 
 export default function AdminPage() {
   const t = useTranslations('admin');
@@ -24,6 +25,7 @@ export default function AdminPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Client-side gate; the API also enforces ADMIN (403) on every endpoint.
   useEffect(() => {
@@ -85,23 +87,26 @@ export default function AdminPage() {
         <p className="font-mono text-sm text-muted-foreground">{t('subtitle')}</p>
       </header>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setPage(1);
-        }}
-        className="flex gap-2"
-      >
-        <Input
-          placeholder={t('searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-xs"
-        />
-        <Button type="submit" variant="outline">
-          {t('search')}
-        </Button>
-      </form>
+      <div className="flex items-center justify-between gap-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setPage(1);
+          }}
+          className="flex gap-2"
+        >
+          <Input
+            placeholder={t('searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button type="submit" variant="outline">
+            {t('search')}
+          </Button>
+        </form>
+        <Button onClick={() => setCreating(true)}>{t('newUser')}</Button>
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full text-sm">
@@ -216,6 +221,8 @@ export default function AdminPage() {
         loading={del.isPending}
         onConfirm={() => deleting && del.mutate(deleting.id)}
       />
+
+      <CreateUserDialog open={creating} onOpenChange={setCreating} />
     </div>
   );
 }

@@ -96,6 +96,15 @@ export type AdminUserList = z.infer<typeof adminUserListSchema>;
 export const updateRoleSchema = z.object({ role: RoleEnum });
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 
+/** Admin-created account: the admin vouches for it, so it's created verified. */
+export const adminCreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(120),
+  password: passwordSchema,
+  role: RoleEnum,
+});
+export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>;
+
 /** A single audit-log entry as exposed to the data subject (LGPD export). */
 export const auditLogEntrySchema = z.object({
   id: z.string(),

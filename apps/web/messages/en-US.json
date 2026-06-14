@@ -184,7 +184,15 @@
     "deleteConfirm": "Delete {email}? This revokes their sessions and marks the account deleted.",
     "pageInfo": "Page {page} of {total}",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "newUser": "New user",
+    "create": {
+      "title": "New user",
+      "subtitle": "The account is created already verified.",
+      "role": "Role",
+      "submit": "Create user",
+      "created": "User created."
+    }
   },
   "errors": {
     "notFound": {
