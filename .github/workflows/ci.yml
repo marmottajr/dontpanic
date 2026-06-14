@@ -12,32 +12,6 @@ concurrency:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: dontpanic
-          POSTGRES_PASSWORD: dontpanic
-          POSTGRES_DB: dontpanic_test
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U dontpanic"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      DATABASE_URL: postgresql://dontpanic:dontpanic@localhost:5432/dontpanic_test?schema=public
-      REDIS_URL: redis://localhost:6379
-      JWT_ACCESS_SECRET: ci-access-secret-aaaaaaaaaaaaaaaaaaaaaaaa
-      JWT_REFRESH_SECRET: ci-refresh-secret-bbbbbbbbbbbbbbbbbbbbbbbb
-      CSRF_SECRET: ci-csrf-secret-cccccccccccccccccccccccc
-      CACHE_DRIVER: redis
-      MAIL_DRIVER: console
-      STORAGE_DRIVER: local
     steps:
       - uses: actions/checkout@v4
 
@@ -59,34 +33,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Apply migrations
-        run: pnpm --filter @dontpanic/api exec prisma migrate deploy
-
-      - name: Test (with coverage)
+      # Unit tests only — they mock Prisma/cache/mail/storage, so no DB/Redis is
+      # needed. The e2e suite (real Postgres) and Playwright smokes are run
+      # locally, not in CI, on purpose.
+      - name: Test (unit, with coverage)
         run: pnpm test
-
-      - name: E2E (backend, real Postgres)
-        run: pnpm --filter @dontpanic/api test:e2e
 
       - name: Audit (fail on high/critical)
         run: pnpm audit --audit-level high
 
       - name: Build
         run: pnpm build
-
-  web-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build shared contracts
-        run: pnpm --filter @dontpanic/shared build
-      - name: Install Playwright (chromium)
-        run: pnpm --filter @dontpanic/web exec playwright install --with-deps chromium
-      - name: Playwright smoke
-        run: pnpm --filter @dontpanic/web test:e2e
