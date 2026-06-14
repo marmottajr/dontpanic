@@ -151,11 +151,14 @@ describe('AdminUsersService', () => {
   });
 
   describe('softDelete', () => {
-    it('soft-deletes, revokes sessions and audits', async () => {
+    it('anonymizes the email, soft-deletes, revokes sessions and audits', async () => {
       prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2' }));
       prisma.user.update.mockResolvedValue(userRow({ id: 'u2', deletedAt: new Date() }));
       await service.softDelete('admin1', 'u2', ctx);
-      expect(prisma.user.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
+      const data = prisma.user.update.mock.calls[0][0].data;
+      expect(data.deletedAt).toBeInstanceOf(Date);
+      expect(data.email).toMatch(/^deleted\+.*@deleted\.invalid$/);
+      expect(data.name).toBe('Deleted user');
       expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2');
       expect(prisma.auditLog.create).toHaveBeenCalled();
     });

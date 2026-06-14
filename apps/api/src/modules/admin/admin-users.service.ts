@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { randomUUID } from 'node:crypto';
 import type { Prisma, User } from '@prisma/client';
 import type {
   AdminCreateUserInput,
@@ -150,7 +151,20 @@ export class AdminUsersService {
       throw new BadRequestException("You can't delete your own account here");
     }
     await this.requireUser(targetId);
-    await this.prisma.user.update({ where: { id: targetId }, data: { deletedAt: new Date() } });
+    // Soft-delete AND anonymize (same as LGPD erasure): scrub PII and free the
+    // email so a brand-new account can reuse it. The row stays for audit lineage.
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: {
+        deletedAt: new Date(),
+        email: `deleted+${randomUUID()}@deleted.invalid`,
+        name: 'Deleted user',
+        avatarUrl: null,
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        passwordHash: await argon2.hash(randomUUID()),
+      },
+    });
     await this.tokenService.revokeAllForUser(targetId);
     await this.audit('admin.user_deleted', adminId, ctx, { targetId });
   }
