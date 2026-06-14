@@ -1,6 +1,11 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
+overrides:
+  # esbuild < 0.28.1 has a HIGH advisory (GHSA-gv7w-rqvm-qjhr: missing binary
+  # integrity check → RCE via NPM_CONFIG_REGISTRY). Pulled transitively
+  # (Storybook/Vite/tsup), so force every copy to the patched release.
+  esbuild: '>=0.28.1'
 allowBuilds:
   '@parcel/watcher': true
   '@prisma/engines': true
@@ -38,10 +43,10 @@ minimumReleaseAgeExclude:
   - tailwindcss@4.3.1
 onlyBuiltDependencies:
   - esbuild
-  - "@prisma/client"
+  - '@prisma/client'
   - prisma
-  - "@prisma/engines"
+  - '@prisma/engines'
   - argon2
   - sharp
-  - "@swc/core"
+  - '@swc/core'
   - unrs-resolver
