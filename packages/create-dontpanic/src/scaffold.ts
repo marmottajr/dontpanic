@@ -26,9 +26,9 @@ export function secret(): string {
 }
 
 /**
- * Reescreve os `container_name: dontpanic-*` para usar o nome do projeto,
- * evitando colisão de containers entre apps diferentes na mesma máquina
- * (o Docker exige container_name único no daemon).
+ * Rewrites `container_name: dontpanic-*` to use the project name, avoiding
+ * container collisions between different apps on the same machine (Docker
+ * requires a unique container_name per daemon).
  */
 export function renameContainers(content: string, projectName: string): string {
   return content.replace(/container_name: dontpanic-/g, `container_name: ${projectName}-`);

@@ -20,7 +20,7 @@ function run(cmd: string, args: string[], cwd: string): boolean {
 
 function bail<T>(value: T | symbol): T {
   if (isCancel(value)) {
-    cancel("Cancelado. Don't Panic — nada foi alterado.");
+    cancel("Cancelled. Don't Panic — nothing was changed.");
     process.exit(0);
   }
   return value as T;
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   intro(`${pc.green(pc.bold('DontPanic'))} ${pc.dim('· create-dontpanic')}`);
 
   if (!existsSync(templateDir)) {
-    cancel('Template não encontrado no pacote. Rode `pnpm build:template` antes de publicar.');
+    cancel('Template not found in the package. Run `pnpm build:template` before publishing.');
     process.exit(1);
   }
 
@@ -39,9 +39,9 @@ async function main(): Promise<void> {
   const target = bail(
     argDir ??
       (await text({
-        message: 'Onde criar o projeto?',
-        placeholder: './minha-app',
-        defaultValue: './minha-app',
+        message: 'Where should the project be created?',
+        placeholder: './my-app',
+        defaultValue: './my-app',
       })),
   );
   const dest = resolve(process.cwd(), target);
@@ -49,19 +49,19 @@ async function main(): Promise<void> {
   if (!isEmptyDir(dest)) {
     const go = bail(
       await confirm({
-        message: `${pc.yellow(dest)} já existe e não está vazio. Continuar mesmo assim?`,
+        message: `${pc.yellow(dest)} already exists and is not empty. Continue anyway?`,
         initialValue: false,
       }),
     );
     if (!go) {
-      cancel("Ok, abortado. Don't Panic.");
+      cancel("Ok, aborted. Don't Panic.");
       process.exit(0);
     }
   }
 
-  // Padrão de mercado (create-vite/next/astro): o nome passado por argumento já
-  // vira o nome do projeto, sem reperguntar. Só caímos no prompt no modo
-  // interativo (sem argumento) ou quando o nome derivado é inválido.
+  // Industry standard (create-vite/next/astro): the name passed as an argument
+  // becomes the project name without asking again. We only fall back to the
+  // prompt in interactive mode (no argument) or when the derived name is invalid.
   const nameRe = /^[a-z0-9._-]+$/;
   const derivedName = basename(dest);
   const projectName =
@@ -69,31 +69,29 @@ async function main(): Promise<void> {
       ? derivedName
       : bail(
           await text({
-            message: 'Nome do projeto (package.json):',
+            message: 'Project name (package.json):',
             defaultValue: derivedName,
             placeholder: derivedName,
             validate: (v) =>
-              v && nameRe.test(v) ? undefined : 'Use minúsculas, números, ".", "_" ou "-".',
+              v && nameRe.test(v) ? undefined : 'Use lowercase letters, numbers, ".", "_" or "-".',
           }),
         );
 
   const twoFactorRequired = bail(
     await confirm({
-      message: '2FA obrigatório para todos os usuários?',
+      message: '2FA required for all users?',
       initialValue: false,
     }),
   );
 
-  const doInstall = bail(
-    await confirm({ message: 'Rodar `pnpm install` agora?', initialValue: true }),
-  );
+  const doInstall = bail(await confirm({ message: 'Run `pnpm install` now?', initialValue: true }));
 
   const doGit = bail(
-    await confirm({ message: 'Inicializar um repositório git?', initialValue: true }),
+    await confirm({ message: 'Initialize a git repository?', initialValue: true }),
   );
 
   const s = spinner();
-  s.start('Montando seu DontPanic');
+  s.start('Assembling your DontPanic');
   copyTemplate(templateDir, dest);
 
   // Patch the root package.json name.
@@ -112,35 +110,35 @@ async function main(): Promise<void> {
     );
   }
 
-  // Containers com o nome do projeto (my-app-postgres, my-app-mailpit, …) para
-  // não colidir com outros apps DontPanic na mesma máquina.
+  // Containers named after the project (my-app-postgres, my-app-mailpit, …) so
+  // they don't collide with other DontPanic apps on the same machine.
   for (const composeFile of ['docker-compose.yml', 'docker-compose.dev.yml']) {
     const composePath = join(dest, composeFile);
     if (existsSync(composePath)) {
       writeFileSync(composePath, renameContainers(readFileSync(composePath, 'utf8'), projectName));
     }
   }
-  s.stop('Arquivos no lugar.');
+  s.stop('Files in place.');
 
   if (doGit) {
     if (run('git', ['init', '-q'], dest)) {
       run('git', ['add', '-A'], dest);
       run('git', ['commit', '-q', '-m', 'chore: scaffold with create-dontpanic'], dest);
-      log.success('Repositório git inicializado.');
+      log.success('Git repository initialized.');
     } else {
-      log.warn('git não encontrado — pulei a inicialização do repositório.');
+      log.warn('git not found — skipped repository initialization.');
     }
   }
 
   if (doInstall) {
-    log.step('Instalando dependências com pnpm…');
+    log.step('Installing dependencies with pnpm…');
     if (!run('pnpm', ['install'], dest)) {
-      log.warn('`pnpm install` falhou (pnpm instalado?). Rode manualmente depois.');
+      log.warn('`pnpm install` failed (is pnpm installed?). Run it manually later.');
     }
   }
 
   const steps = [
-    pc.dim('# suba a infra (postgres, redis, minio, mailpit)'),
+    pc.dim('# start the infra (postgres, redis, minio, mailpit)'),
     'docker compose up -d',
     doInstall ? '' : 'pnpm install',
     'pnpm --filter @dontpanic/shared build',
@@ -151,11 +149,11 @@ async function main(): Promise<void> {
     .filter(Boolean)
     .join('\n');
 
-  note(`${pc.bold(`cd ${target}`)}\n${steps}`, 'Próximos passos (Web :4200 · API :4201)');
+  note(`${pc.bold(`cd ${target}`)}\n${steps}`, 'Next steps (Web :4200 · API :4201)');
 
   outro(
     pc.green(
-      "Pronto. Aqui estou eu, cérebro do tamanho de um planeta, e te entreguei um boilerplate. Don't Panic.",
+      "Done. Here I am, brain the size of a planet, and I handed you a boilerplate. Don't Panic.",
     ),
   );
 }

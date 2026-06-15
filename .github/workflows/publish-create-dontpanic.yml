@@ -1,0 +1,83 @@
+name: Publish create-dontpanic
+
+# Publishes the `create-dontpanic` package to npm whenever a version tag is
+# pushed (e.g. `v0.0.7`). The tag must match the version in
+# packages/create-dontpanic/package.json, otherwise the run fails before
+# publishing. If that version is already on npm the publish is skipped, so a
+# duplicate tag push never errors out.
+#
+# Note: this is independent from the Changesets flow in release.yml (which
+# publishes on merge of the "Version Packages" PR and tags as
+# `create-dontpanic@x.y.z`). The `v*` pattern here does not overlap with those
+# tags, so the two never trigger each other.
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency: publish-create-dontpanic-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./packages/create-dontpanic/package.json').version")"
+          echo "Tag: $TAG_VERSION · package.json: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match create-dontpanic version $PKG_VERSION"
+            exit 1
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+        id: version
+
+      - name: Skip if already published
+        id: check
+        run: |
+          if npm view "create-dontpanic@${{ steps.version.outputs.version }}" version >/dev/null 2>&1; then
+            echo "create-dontpanic@${{ steps.version.outputs.version }} is already on npm — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Quality gate before shipping. The package's `prepublishOnly` rebuilds the
+      # bundled template and dist, so the published artifact is always fresh.
+      - name: Build shared contracts
+        if: steps.check.outputs.skip != 'true'
+        run: pnpm --filter @dontpanic/shared build
+
+      - name: Lint
+        if: steps.check.outputs.skip != 'true'
+        run: pnpm --filter create-dontpanic lint
+
+      - name: Typecheck
+        if: steps.check.outputs.skip != 'true'
+        run: pnpm --filter create-dontpanic typecheck
+
+      - name: Test
+        if: steps.check.outputs.skip != 'true'
+        run: pnpm --filter create-dontpanic test
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        run: pnpm --filter create-dontpanic publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -49,7 +49,7 @@ describe('renameContainers', () => {
     expect(out).not.toContain('dontpanic-');
   });
 
-  it('não toca em outras ocorrências de dontpanic (db, bucket, credenciais)', () => {
+  it('does not touch other occurrences of dontpanic (db, bucket, credentials)', () => {
     const yml = [
       '    container_name: dontpanic-postgres',
       '    environment:',
@@ -58,7 +58,7 @@ describe('renameContainers', () => {
     ].join('\n');
     const out = renameContainers(yml, 'my-app');
     expect(out).toContain('container_name: my-app-postgres');
-    expect(out).toContain('POSTGRES_USER: dontpanic'); // credenciais intactas
+    expect(out).toContain('POSTGRES_USER: dontpanic'); // credentials intact
     expect(out).toContain('POSTGRES_DB: dontpanic');
   });
 });
