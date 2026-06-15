@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "DontPanic — a production-grade full-stack boilerplate. The answer to building any system. (Marvin would say: 'Here I am, brain the size of a planet, scaffolding your CRUD app.')",
-  "packageManager": "pnpm@11.5.1",
+  "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": ">=22",
     "pnpm": ">=11"
