@@ -29,14 +29,12 @@ jobs:
       - name: Build shared contracts
         run: pnpm --filter @dontpanic/shared build
 
-      # Opens/updates a "Version Packages" PR; when that PR merges, publishes the
-      # public packages (create-dontpanic) to npm. Requires the NPM_TOKEN secret.
-      - name: Changesets — version PR or publish
+      # Opens/updates a "Version Packages" PR that bumps versions and writes
+      # changelogs from the changesets. Publishing is NOT done here — it happens
+      # in publish-create-dontpanic.yml when a `v*` tag is pushed.
+      - name: Changesets — open/refresh the version PR
         uses: changesets/action@v1
         with:
           version: pnpm changeset version
-          publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
