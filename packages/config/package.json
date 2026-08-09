@@ -8,9 +8,9 @@
     "./prettier": "./prettier.json"
   },
   "dependencies": {
-    "@eslint/js": "^9.17.0",
-    "eslint-config-prettier": "^9.1.0",
-    "globals": "^15.14.0",
-    "typescript-eslint": "^8.18.1"
+    "@eslint/js": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "typescript-eslint": "^8.66.0"
   }
 }
