@@ -34,13 +34,13 @@
     "prepublishOnly": "pnpm run build:template && pnpm run build"
   },
   "devDependencies": {
-    "@clack/prompts": "1.5.1",
+    "@clack/prompts": "1.7.0",
     "@dontpanic/config": "workspace:*",
-    "@types/node": "25.9.3",
-    "eslint": "^10.5.0",
+    "@types/node": "26.1.2",
+    "eslint": "^10.8.0",
     "picocolors": "^1.1.1",
     "tsup": "^8.5.1",
-    "typescript": "6.0.3",
-    "vitest": "4.1.8"
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
   }
 }
