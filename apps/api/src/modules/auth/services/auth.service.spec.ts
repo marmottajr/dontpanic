@@ -10,6 +10,7 @@ const CONFIG: Record<string, unknown> = {
   WEB_ORIGIN: 'http://localhost:3000',
   LOGIN_MAX_ATTEMPTS: 5,
   LOGIN_LOCK_DURATION: 900,
+  REFRESH_REUSE_GRACE: 10,
 };
 
 function makeConfig() {
@@ -42,7 +43,12 @@ describe('AuthService', () => {
         deleteMany: jest.fn(),
       },
       passwordResetToken: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-      refreshToken: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      refreshToken: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn().mockResolvedValue([]),
     };
@@ -396,15 +402,19 @@ describe('AuthService', () => {
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
     });
 
+    /** A row as findUnique returns it: live and rotatable unless overridden. */
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: 'rt-1',
+      userId: 'u1',
+      familyId: 'fam-1',
+      revokedAt: null,
+      replacedById: null,
+      expiresAt: new Date(Date.now() + 100000),
+      ...over,
+    });
+
     it('detects reuse of an already-revoked token and nukes the family', async () => {
-      prisma.refreshToken.findUnique.mockResolvedValue({
-        id: 'rt-1',
-        userId: 'u1',
-        familyId: 'fam-1',
-        revokedAt: new Date(),
-        replacedById: null,
-        expiresAt: new Date(Date.now() + 100000),
-      });
+      prisma.refreshToken.findUnique.mockResolvedValue(row({ revokedAt: new Date() }));
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
       expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
     });
@@ -422,15 +432,10 @@ describe('AuthService', () => {
       expect(tokenService.revokeFamily).not.toHaveBeenCalled();
     });
 
-    it('treats a lost claim race (count 0) as theft and revokes the family', async () => {
-      prisma.refreshToken.findUnique.mockResolvedValue({
-        id: 'rt-1',
-        userId: 'u1',
-        familyId: 'fam-1',
-        revokedAt: null,
-        replacedById: null,
-        expiresAt: new Date(Date.now() + 100000),
-      });
+    it('treats a lost claim race outside the grace window as theft', async () => {
+      // The winner rotated this row long ago -> a late replay, i.e. real theft.
+      const stale = row({ revokedAt: new Date(Date.now() - 60_000), replacedById: 'rt-other' });
+      prisma.refreshToken.findUnique.mockResolvedValueOnce(row()).mockResolvedValueOnce(stale);
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
@@ -439,14 +444,7 @@ describe('AuthService', () => {
     });
 
     it('rotates successfully: claims the row, mints a successor in the same family', async () => {
-      prisma.refreshToken.findUnique.mockResolvedValue({
-        id: 'rt-1',
-        userId: 'u1',
-        familyId: 'fam-1',
-        revokedAt: null,
-        replacedById: null,
-        expiresAt: new Date(Date.now() + 100000),
-      });
+      prisma.refreshToken.findUnique.mockResolvedValue(row());
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
 
@@ -457,24 +455,93 @@ describe('AuthService', () => {
         'fam-1',
         ctx,
       );
-      // Old row points at its replacement.
-      expect(prisma.refreshToken.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
-        data: { replacedById: 'rt-new' },
+      // The successor is minted BEFORE the claim, and both fields land in the
+      // SAME conditional write — so the row is never revoked-without-successor.
+      expect(tokenService.issueTokensInFamily.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.refreshToken.updateMany.mock.invocationCallOrder[0],
+      );
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', revokedAt: null, replacedById: null },
+        data: { revokedAt: expect.any(Date), replacedById: 'rt-new' },
       });
+      // No second write to fill in replacedById after the fact.
+      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
     });
 
     it('rejects when the owning user was soft-deleted', async () => {
-      prisma.refreshToken.findUnique.mockResolvedValue({
-        id: 'rt-1',
-        userId: 'u1',
-        familyId: 'fam-1',
-        revokedAt: null,
-        replacedById: null,
-        expiresAt: new Date(Date.now() + 100000),
-      });
+      prisma.refreshToken.findUnique.mockResolvedValue(row());
       prisma.user.findUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+    });
+
+    // --- the reuse grace window (two tabs refreshing at once) --------------
+
+    describe('grace window', () => {
+      /** A row rotated `agoMs` ago, i.e. revoked WITH a successor. */
+      const rotated = (agoMs: number) =>
+        row({ revokedAt: new Date(Date.now() - agoMs), replacedById: 'rt-winner' });
+
+      beforeEach(() => {
+        prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
+      });
+
+      it('serves a token that was rotated moments ago while the family is alive', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(rotated(500));
+        prisma.refreshToken.count.mockResolvedValue(1); // the winner's token
+
+        const res = await service.refresh(rawToken, ctx);
+        expect(res.tokens).toEqual({ accessToken: 'AT2', refreshToken: 'RT2' });
+        expect(tokenService.revokeFamily).not.toHaveBeenCalled();
+        // The row belongs to the winner: this caller claims nothing.
+        expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('still treats a LATE replay as theft even with a successor', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(rotated(60_000));
+        prisma.refreshToken.count.mockResolvedValue(1);
+
+        await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+      });
+
+      it('refuses a recently rotated token once the family is dead', async () => {
+        // revokeFamily leaves the revokedAt of already-revoked rows untouched,
+        // so recency alone would keep letting a killed session back in.
+        prisma.refreshToken.findUnique.mockResolvedValue(rotated(500));
+        prisma.refreshToken.count.mockResolvedValue(0);
+
+        await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+      });
+
+      it('a logout-revoked token is theft, not concurrency (no successor)', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(row({ revokedAt: new Date() }));
+        prisma.refreshToken.count.mockResolvedValue(1);
+
+        await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+        expect(prisma.refreshToken.count).not.toHaveBeenCalled(); // short-circuited
+      });
+
+      it('serves the loser of a claim race when the winner just rotated', async () => {
+        // Reads live, loses the conditional write, re-reads and finds a fresh
+        // rotation: two tabs, not a thief.
+        prisma.refreshToken.findUnique
+          .mockResolvedValueOnce(row())
+          .mockResolvedValueOnce(rotated(50));
+        prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+        prisma.refreshToken.count.mockResolvedValue(1);
+
+        const res = await service.refresh(rawToken, ctx);
+        expect(res.tokens).toEqual({ accessToken: 'AT2', refreshToken: 'RT2' });
+        expect(tokenService.revokeFamily).not.toHaveBeenCalled();
+        // The token this request just minted must not count as the family's life.
+        expect(prisma.refreshToken.count).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ NOT: { id: 'rt-new' } }),
+          }),
+        );
+      });
     });
   });
 

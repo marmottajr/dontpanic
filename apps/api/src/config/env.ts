@@ -19,6 +19,10 @@ export const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(16),
   JWT_ACCESS_TTL: z.coerce.number().default(900),
   JWT_REFRESH_TTL: z.coerce.number().default(604800),
+  // Grace window (seconds) in which re-presenting an ALREADY ROTATED refresh
+  // token is read as two tabs/requests racing, not as theft. Outside it, a
+  // replay still nukes the family. 0 restores the strict (intolerant) behaviour.
+  REFRESH_REUSE_GRACE: z.coerce.number().default(10),
 
   COOKIE_DOMAIN: z.string().default('localhost'),
   COOKIE_SECURE: boolish(false),

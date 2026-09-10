@@ -109,7 +109,20 @@ export class AuthController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AuthUserResponse> {
     const raw = req.cookies?.[REFRESH_COOKIE] ?? '';
-    const { user, tokens } = await this.auth.refresh(raw, this.ctx(req));
+
+    let user: AuthUserResponse['user'];
+    let tokens: { accessToken: string; refreshToken: string };
+    try {
+      ({ user, tokens } = await this.auth.refresh(raw, this.ctx(req)));
+    } catch (err) {
+      // A refused refresh means the session is over for good. Clearing the
+      // cookies here is what stops the Next proxy from still seeing a "session"
+      // in the access cookie and bouncing the user from /login back inside, in
+      // a loop — the access cookie now outlives the JWT it carries.
+      this.cookies.clearAuthCookies(reply);
+      throw err;
+    }
+
     this.cookies.setAccessCookie(reply, tokens.accessToken);
     this.cookies.setRefreshCookie(reply, tokens.refreshToken);
     return { user };

@@ -36,10 +36,23 @@ describe('CookieService', () => {
         sameSite: 'lax',
         path: '/',
         domain: 'localhost',
-        maxAge: 900,
         secure: false,
       }),
     );
+  });
+
+  it('gives the access cookie the SESSION lifetime, not the JWT lifetime', () => {
+    // The Next proxy gates navigations on the mere presence of this cookie. If
+    // it expired with the JWT (900s), the browser would drop it while the
+    // refresh token was still good and the user would land on /login without a
+    // single request ever reaching the API.
+    const reply = makeReply();
+    new CookieService(makeConfig(defaults)).setAccessCookie(reply as never, 'jwt-token');
+
+    expect(reply.setCookie.mock.calls[0][2]).toMatchObject({ maxAge: defaults.JWT_REFRESH_TTL });
+    expect(reply.setCookie.mock.calls[0][2]).not.toMatchObject({
+      maxAge: defaults.JWT_ACCESS_TTL,
+    });
   });
 
   it('scopes the refresh cookie to /api/auth with the refresh TTL', () => {

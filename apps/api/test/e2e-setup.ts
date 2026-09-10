@@ -24,6 +24,8 @@ process.env.CSRF_SECRET = 'e2e-csrf-secret-0123456789-abcdef';
 // Short-ish access TTL still comfortably outlives a single test.
 process.env.JWT_ACCESS_TTL = '900';
 process.env.JWT_REFRESH_TTL = '604800';
+// Explicit, so the concurrency tests below don't depend on the schema default.
+process.env.REFRESH_REUSE_GRACE = '10';
 // Keep cookies non-Secure so supertest (plain http) actually receives them.
 process.env.COOKIE_SECURE = 'false';
 // Throttler is global; give the e2e run lots of headroom so login-failure loops

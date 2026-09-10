@@ -35,11 +35,18 @@ export class CookieService {
     };
   }
 
+  /**
+   * The access cookie's `maxAge` tracks the **session** (the refresh TTL), not
+   * the lifetime of the JWT it carries. What decides whether an access token is
+   * still good is its signed `exp`, checked by the API — the cookie expiring
+   * early buys no security, it only makes the browser drop the cookie while the
+   * session is still renewable, which the Next proxy then reads as "logged out".
+   */
   setAccessCookie(reply: FastifyReply, token: string): void {
     reply.setCookie(
       ACCESS_COOKIE,
       token,
-      this.base(ACCESS_PATH, this.config.get('JWT_ACCESS_TTL', { infer: true })),
+      this.base(ACCESS_PATH, this.config.get('JWT_REFRESH_TTL', { infer: true })),
     );
   }
 

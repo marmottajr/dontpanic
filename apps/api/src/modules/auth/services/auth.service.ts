@@ -351,17 +351,13 @@ export class AuthService {
     }
 
     // REUSE DETECTION: a token that's already revoked (i.e. previously rotated
-    // away or logged out) being presented again means it was stolen and replayed.
-    // Nuke the entire family so neither the thief nor the victim can continue.
-    if (record.revokedAt || record.replacedById) {
-      await this.tokenService.revokeFamily(record.familyId);
-      this.logger.warn(
-        `Refresh token reuse detected for family ${record.familyId}; family revoked`,
-      );
-      await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
-        familyId: record.familyId,
-      });
-      throw new UnauthorizedException('Invalid session');
+    // away or logged out) being presented again means it was stolen and replayed
+    // — UNLESS the rotation happened moments ago and the session is still alive,
+    // which is just a second tab refreshing with the same cookie. Real replay
+    // still nukes the entire family.
+    const alreadyRotated = Boolean(record.revokedAt || record.replacedById);
+    if (alreadyRotated && !(await this.isConcurrentRotation(record))) {
+      await this.rejectAsReuse(record, ctx);
     }
 
     if (record.expiresAt < new Date()) {
@@ -373,41 +369,91 @@ export class AuthService {
       throw new UnauthorizedException('Invalid session');
     }
 
-    // Atomically CLAIM this token before minting a successor. The transition
-    // unrevoked->revoked for a single row is one guarded conditional write whose
-    // row-count tells us whether we won. Two concurrent refreshes of the SAME
-    // token race here: exactly one updates 1 row, the loser updates 0 and is
-    // treated as reuse — closing the TOCTOU replay hole.
-    const claimed = await this.prisma.refreshToken.updateMany({
-      where: { id: record.id, revokedAt: null, replacedById: null },
-      data: { revokedAt: new Date() },
-    });
-    if (claimed.count === 0) {
-      // We lost the race (or it was already rotated/revoked): treat as theft.
-      await this.tokenService.revokeFamily(record.familyId);
-      this.logger.warn(
-        `Refresh token reuse detected for family ${record.familyId}; family revoked`,
-      );
-      await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
-        familyId: record.familyId,
-      });
-      throw new UnauthorizedException('Invalid session');
-    }
-
-    // We own the rotation now: mint the successor in the SAME family and point
-    // the claimed row at its replacement (keeps the lineage auditable).
+    // Mint first, claim second. The order matters: `revokedAt` and `replacedById`
+    // are now written by the SAME conditional update, so there is never an
+    // instant where the row reads as revoked-but-without-a-successor — the state
+    // a concurrent request could not tell apart from theft.
     const { tokens, refreshTokenId } = await this.tokenService.issueTokensInFamily(
       { id: user.id, email: user.email, role: user.role },
       record.familyId,
       ctx,
     );
-    await this.prisma.refreshToken.update({
-      where: { id: record.id },
-      data: { replacedById: refreshTokenId },
+
+    if (alreadyRotated) {
+      // Inside the grace window: the row belongs to whoever won the rotation.
+      // Nothing to claim — this caller just gets its own successor in the family.
+      await this.audit('auth.refresh.concurrent', user.id, ctx, { familyId: record.familyId });
+      return { user: toUserDto(user), tokens };
+    }
+
+    // Atomically CLAIM this token. The transition unrevoked->revoked for a single
+    // row is one guarded conditional write whose row-count tells us whether we
+    // won. Two concurrent refreshes of the SAME token race here: exactly one
+    // updates 1 row, the loser updates 0 — closing the TOCTOU replay hole.
+    const claimed = await this.prisma.refreshToken.updateMany({
+      where: { id: record.id, revokedAt: null, replacedById: null },
+      data: { revokedAt: new Date(), replacedById: refreshTokenId },
     });
+    if (claimed.count === 0) {
+      // We lost the race. Re-read the row: if the winner rotated it just now and
+      // the family is still alive, this is concurrency, not theft.
+      const current = await this.prisma.refreshToken.findUnique({ where: { id: record.id } });
+      if (current && (await this.isConcurrentRotation(current, refreshTokenId))) {
+        await this.audit('auth.refresh.concurrent', user.id, ctx, { familyId: record.familyId });
+        return { user: toUserDto(user), tokens };
+      }
+      // Genuine reuse — revokeFamily also kills the successor we just minted.
+      await this.rejectAsReuse(record, ctx);
+    }
 
     await this.audit('auth.refresh', user.id, ctx);
     return { user: toUserDto(user), tokens };
+  }
+
+  /** Detected theft: kill the whole lineage and refuse. Never returns. */
+  private async rejectAsReuse(
+    record: { familyId: string; userId: string },
+    ctx: RequestContext,
+  ): Promise<never> {
+    await this.tokenService.revokeFamily(record.familyId);
+    this.logger.warn(`Refresh token reuse detected for family ${record.familyId}; family revoked`);
+    await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
+      familyId: record.familyId,
+    });
+    throw new UnauthorizedException('Invalid session');
+  }
+
+  /**
+   * Re-presenting an already-rotated token is theft — **except** when the
+   * rotation just happened and the session is still alive.
+   *
+   * Three conditions, all necessary:
+   * - the token was **rotated** (it has a successor), not revoked by logout or
+   *   by a family revocation — those leave `replacedById` null;
+   * - the rotation was less than `REFRESH_REUSE_GRACE` seconds ago;
+   * - the family still has a live token. Without this, a token rotated inside
+   *   the window would keep being accepted after the family was revoked, because
+   *   `revokeFamily` does not touch the `revokedAt` of rows already revoked.
+   */
+  private async isConcurrentRotation(
+    record: { familyId: string; revokedAt: Date | null; replacedById: string | null },
+    /** Token minted by this request: not confirmed yet, so it doesn't count as life. */
+    ignoreTokenId?: string,
+  ): Promise<boolean> {
+    if (!record.replacedById || !record.revokedAt) return false;
+
+    const graceMs = this.config.get('REFRESH_REUSE_GRACE', { infer: true }) * 1000;
+    if (Date.now() - record.revokedAt.getTime() > graceMs) return false;
+
+    const alive = await this.prisma.refreshToken.count({
+      where: {
+        familyId: record.familyId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        ...(ignoreTokenId ? { NOT: { id: ignoreTokenId } } : {}),
+      },
+    });
+    return alive > 0;
   }
 
   // --- logout ------------------------------------------------------------

@@ -16,6 +16,15 @@ function jsonResponse(status: number, body: unknown) {
 }
 
 const fetchMock = vi.fn();
+const assignMock = vi.fn();
+
+/** Stub window.location so redirectToLogin() is observable and inert. */
+function stubLocation(pathname = '/dashboard', search = '') {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { pathname, search, assign: assignMock },
+  });
+}
 
 // The api module keeps an in-memory csrf token cache at module scope.
 // Re-import it fresh for every test so the cache never leaks between cases.
@@ -25,6 +34,8 @@ let ApiError: typeof ApiErrorType;
 
 beforeEach(async () => {
   fetchMock.mockReset();
+  assignMock.mockReset();
+  stubLocation();
   vi.stubGlobal('fetch', fetchMock);
   vi.resetModules();
   const mod = await import('./api');
@@ -107,12 +118,7 @@ describe('api()', () => {
     expect(data).toEqual({ secret: 42 });
 
     const urls = fetchMock.mock.calls.map(([u]) => u);
-    expect(urls).toEqual([
-      '/api/users/me',
-      '/api/auth/csrf',
-      '/api/auth/refresh',
-      '/api/users/me',
-    ]);
+    expect(urls).toEqual(['/api/users/me', '/api/auth/csrf', '/api/auth/refresh', '/api/users/me']);
     // refresh is a POST carrying the csrf token
     const refreshInit = fetchMock.mock.calls[2][1];
     expect(refreshInit.method).toBe('POST');
@@ -124,9 +130,7 @@ describe('api()', () => {
       .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 'c' })) // mutation csrf
       .mockResolvedValueOnce(jsonResponse(401, { message: 'bad creds' })); // login 401
 
-    await expect(api('/auth/login', { method: 'POST', body: {} })).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    await expect(api('/auth/login', { method: 'POST', body: {} })).rejects.toBeInstanceOf(ApiError);
     // It first fetched csrf (mutation) then hit login and got 401. No refresh call.
     const urls = fetchMock.mock.calls.map(([u]) => u);
     expect(urls).toEqual(['/api/auth/csrf', '/api/auth/login']);
@@ -186,6 +190,90 @@ describe('api()', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(204, undefined));
     const data = await api('/users/me');
     expect(data).toBeNull();
+  });
+});
+
+describe('silent refresh', () => {
+  it('N concurrent 401s share ONE refresh call (single-flight)', async () => {
+    // Every call to the resource 401s until the refresh lands; after it, they
+    // all succeed. Without single-flight each of the four would fire its own
+    // POST /api/auth/refresh with the SAME cookie — which the backend reads as
+    // reuse and answers by killing the session.
+    let refreshed = false;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/csrf') return jsonResponse(200, { csrfToken: 'r-tok' });
+      if (url === '/api/auth/refresh') {
+        refreshed = true;
+        return jsonResponse(200, { ok: true });
+      }
+      return refreshed ? jsonResponse(200, { ok: true }) : jsonResponse(401, { message: 'exp' });
+    });
+
+    const results = await Promise.all([api('/a'), api('/b'), api('/c'), api('/d')]);
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }, { ok: true }]);
+
+    const refreshCalls = fetchMock.mock.calls.filter(([u]) => u === '/api/auth/refresh');
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it('a later 401 starts a NEW refresh (the in-flight slot is released)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true })) // refresh #1
+      .mockResolvedValueOnce(jsonResponse(200, { first: true }))
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true })) // refresh #2
+      .mockResolvedValueOnce(jsonResponse(200, { second: true }));
+
+    await api('/a');
+    await api('/b');
+
+    const refreshCalls = fetchMock.mock.calls.filter(([u]) => u === '/api/auth/refresh');
+    expect(refreshCalls).toHaveLength(2);
+  });
+
+  it('redirects to /login when the refresh itself is refused with 401', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' })) // GET 401
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' })) // csrf
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'dead' })); // refresh 401
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).toHaveBeenCalledWith('/login?from=%2Fdashboard');
+    // The resource is NOT retried once the session is gone.
+    expect(fetchMock.mock.calls.filter(([u]) => u === '/api/users/me')).toHaveLength(1);
+  });
+
+  it('does NOT redirect when the refresh fails with a network error', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('does NOT redirect when the refresh fails with a 5xx', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' }))
+      .mockResolvedValueOnce(jsonResponse(503, { message: 'down' }));
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('never redirects away from /login itself', async () => {
+    stubLocation('/login', '?from=%2Fdashboard');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' }))
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'dead' }));
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).not.toHaveBeenCalled();
   });
 });
 

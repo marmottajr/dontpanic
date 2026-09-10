@@ -164,6 +164,10 @@ describe('Auth & Users (e2e)', () => {
     const ok = await client.post('/api/auth/refresh');
     expect(ok.status).toBe(200);
 
+    // Age the rotation past REFRESH_REUSE_GRACE so this is a LATE replay — the
+    // real theft signature — and not two tabs racing (which is now tolerated).
+    await ageRotation(userId);
+
     // Replay the OLD (revoked) token -> reuse detected -> 401 + family revoked.
     // The csrf cookie still rides along via the jar; only refresh_token is swapped.
     const replay = await client.post('/api/auth/refresh', undefined, {
@@ -173,6 +177,94 @@ describe('Auth & Users (e2e)', () => {
 
     const live = await prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
     expect(live).toHaveLength(0); // even the freshly-minted token was nuked
+  });
+
+  /** Push every rotation of this user well outside the reuse grace window. */
+  async function ageRotation(userId: string): Promise<void> {
+    await prisma.refreshToken.updateMany({
+      where: { userId, NOT: { revokedAt: null } },
+      data: { revokedAt: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // The three refresh defects: cookie lifetime, concurrency, refused refresh.
+  // ---------------------------------------------------------------------------
+
+  it('gives the access cookie the session lifetime, not the JWT lifetime', async () => {
+    const client = await newClient();
+    const email = 'zaphod@presidency.test';
+    const reg = await client.post('/api/auth/register', {
+      email,
+      password: STRONG_PASSWORD,
+      name: 'Zaphod',
+    });
+    const code = await forceVerificationCode(reg.body.id as string);
+    await client.post('/api/auth/verify-email', { email, code });
+
+    const login = await client.post('/api/auth/login', { email, password: STRONG_PASSWORD });
+    const setCookies = login.headers['set-cookie'] as unknown as string[];
+
+    const maxAgeOf = (name: string) => {
+      const line = setCookies.find((c) => c.startsWith(`${name}=`));
+      expect(line).toBeDefined();
+      return Number(/max-age=(\d+)/i.exec(line!)?.[1]);
+    };
+
+    // The Next proxy gates navigations on the presence of access_token. If the
+    // browser dropped it after JWT_ACCESS_TTL (900s) the user would be bounced
+    // to /login while the refresh token was still good for days.
+    expect(maxAgeOf('access_token')).toBe(Number(process.env.JWT_REFRESH_TTL));
+    expect(maxAgeOf('access_token')).not.toBe(Number(process.env.JWT_ACCESS_TTL));
+    expect(maxAgeOf('access_token')).toBe(maxAgeOf('refresh_token'));
+  });
+
+  it('survives two simultaneous refreshes with the same token', async () => {
+    const { client, userId } = await registerVerifyLogin('trillian@heart-of-gold.test');
+    const shared = client.getCookie('refresh_token')!;
+
+    // Two tabs (or two parallel queries) each hit refresh with the SAME cookie,
+    // because neither has seen the rotated one yet.
+    const [a, b] = await Promise.all([
+      client.post('/api/auth/refresh', undefined, { cookies: { refresh_token: shared } }),
+      client.post('/api/auth/refresh', undefined, { cookies: { refresh_token: shared } }),
+    ]);
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    // The session is intact: losing that race is concurrency, not theft.
+    const live = await prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
+    expect(live.length).toBeGreaterThan(0);
+
+    // And the session still works afterwards.
+    const me = await client.get('/api/users/me');
+    expect(me.status).toBe(200);
+  });
+
+  it('clears the auth cookies when the refresh is rejected', async () => {
+    const { client, userId } = await registerVerifyLogin('marvin@sirius.test');
+    const stolen = client.getCookie('refresh_token')!;
+
+    await client.post('/api/auth/refresh');
+    await ageRotation(userId);
+
+    // A late replay: 401 AND both cookies wiped. Without the wipe the access
+    // cookie would outlive the dead session (it now lasts the whole refresh
+    // TTL) and the proxy would keep bouncing the user from /login back inside.
+    const replay = await client.post('/api/auth/refresh', undefined, {
+      cookies: { refresh_token: stolen },
+    });
+    expect(replay.status).toBe(401);
+
+    const cleared = (replay.headers['set-cookie'] as unknown as string[]) ?? [];
+    for (const name of ['access_token', 'refresh_token']) {
+      const line = cleared.find((c) => c.startsWith(`${name}=`));
+      expect(line).toBeDefined();
+      expect(/expires=Thu, 01 Jan 1970/i.test(line!) || line!.startsWith(`${name}=;`)).toBe(true);
+    }
+    expect(client.hasCookie('access_token')).toBe(false);
+    expect(client.hasCookie('refresh_token')).toBe(false);
   });
 
   // ---------------------------------------------------------------------------
