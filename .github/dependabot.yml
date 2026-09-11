@@ -11,6 +11,24 @@ updates:
         dependency-type: development
       production-dependencies:
         dependency-type: production
+    ignore:
+      # Deliberate pins. Each one is a decision with a known failure behind it,
+      # documented in CLAUDE.md ("Travas deliberadas"). Without these rules
+      # Dependabot re-proposes them every week and the build breaks every week.
+      #
+      # typescript 7 is the Go compiler and exposes no JS compiler API, so
+      # rollup-plugin-dts (via tsup), ts-jest and typescript-eslint all stop
+      # working at once. Observed on PR #32:
+      #   TypeError: Cannot read properties of undefined
+      #     (reading 'useCaseSensitiveFileNames') at rollup-plugin-dts
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # The prisma CLI's `latest` dist-tag points at an 8.x prerelease, while
+      # @prisma/client and the adapter are on 7.x — CLI and client must match.
+      - dependency-name: prisma
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@prisma/*'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: chore
       include: scope
