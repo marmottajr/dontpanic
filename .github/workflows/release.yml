@@ -33,7 +33,7 @@ jobs:
       # changelogs from the changesets. Publishing is NOT done here — it happens
       # in publish-create-dontpanic.yml when a `v*` tag is pushed.
       - name: Changesets — open/refresh the version PR
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           version: pnpm changeset version
         env:
