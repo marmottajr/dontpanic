@@ -36,7 +36,7 @@
   "devDependencies": {
     "@clack/prompts": "1.8.0",
     "@dontpanic/config": "workspace:*",
-    "@types/node": "25.9.3",
+    "@types/node": "26.5.0",
     "eslint": "^10.10.0",
     "picocolors": "^1.1.1",
     "tsup": "^8.5.1",
