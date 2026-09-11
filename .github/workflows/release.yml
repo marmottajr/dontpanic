@@ -35,6 +35,10 @@ jobs:
       - name: Changesets — open/refresh the version PR
         uses: changesets/action@v2
         with:
-          version: pnpm changeset version
+          # v2 renamed the inputs: `version` -> `version-script` (and
+          # `publish` -> `publish-script`). The action fails outright on the
+          # old name rather than ignoring it, so bumping the major without
+          # this line breaks every push to main.
+          version-script: pnpm changeset version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
