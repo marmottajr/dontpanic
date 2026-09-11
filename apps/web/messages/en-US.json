@@ -40,13 +40,23 @@
       "invalid": "Incorrect email or password.",
       "locked": "Account temporarily locked. Try again later."
     },
-    "register": {
-      "title": "Create your account",
+    "signup": {
+      "title": "Create your company",
       "subtitle": "Get started in seconds. Don't Panic.",
-      "submit": "Create account",
+      "companyLegend": "The company",
+      "adminLegend": "Your administrator account",
+      "companyName": "Company name",
+      "companyNamePlaceholder": "Sirius Cybernetics",
+      "slug": "Company address",
+      "slugHint": "Lowercase letters, digits and hyphens only. This is how your company shows up in links.",
+      "slugTaken": "That address is already taken. Pick another one.",
+      "emailTaken": "An account with this email already exists.",
+      "acceptTerms": "I have read and accept the terms of use and the privacy policy.",
+      "acceptTermsRequired": "You must accept the terms to continue.",
+      "submit": "Create company",
       "hasAccount": "Already have an account?",
       "signin": "Sign in",
-      "success": "Account created! Check your email to confirm."
+      "success": "Company created! Check your email to confirm."
     },
     "forgot": {
       "title": "Reset your password",
@@ -77,6 +87,11 @@
       "resendCooldown": "Resend in {seconds}s",
       "noEmail": "Missing email address. Please sign up again.",
       "goToLogin": "Go to login"
+    },
+    "captcha": {
+      "required": "Please confirm you are not a robot to continue.",
+      "failed": "We could not validate the challenge. Try again.",
+      "unavailable": "Verification is unavailable right now. Try again shortly."
     }
   },
   "dashboard": {
@@ -94,6 +109,12 @@
         "title": "Everything pluggable",
         "body": "Swap database, storage and email with one variable."
       }
+    },
+    "variation": {
+      "up": "+{value}",
+      "down": "−{value}",
+      "flat": "{value}",
+      "vsPrevious": "vs. last month"
     }
   },
   "profile": {
@@ -194,6 +215,23 @@
       "created": "User created."
     }
   },
+  "session": {
+    "signInAgain": "Sign in again",
+    "changePassword": "Change password",
+    "advice": "If this wasn’t you, change your password now — someone else may know it.",
+    "expired": {
+      "title": "Your session expired",
+      "description": "You were away long enough that we ended the session for safety. Sign in again to pick up where you left off."
+    },
+    "signed-in-elsewhere": {
+      "title": "You signed in on another device",
+      "description": "Someone signed into this account on another device, so this session was ended."
+    },
+    "reuse-detected": {
+      "title": "We ended your session for safety",
+      "description": "We detected suspicious use of this session’s credentials and ended every session on the account as a precaution."
+    }
+  },
   "errors": {
     "notFound": {
       "title": "Page not found",
@@ -245,5 +283,173 @@
     "tooShort": "Too short (min. {min})",
     "tooLong": "Too long (max. {max})",
     "invalid": "Invalid value"
+  },
+  "tenant": {
+    "blocked": {
+      "title": "Access blocked",
+      "body": "Your company’s access is suspended. While it is, no screen in the system is available — not even to read.",
+      "contact": "If you believe this is a mistake, contact support with your company’s name."
+    },
+    "trial": {
+      "daysLeft": "Trial: {days, plural, one {# day} other {# days}} left.",
+      "endsToday": "Your trial ends today.",
+      "hint": "After that, access is blocked until you pick a plan.",
+      "seePlan": "See plan"
+    },
+    "construction": {
+      "title": "Module under construction",
+      "body": "This part of the system does not exist yet. We would rather show an honest screen than fill the page with invented numbers — made-up data teaches you to distrust every other screen.",
+      "back": "Back to the dashboard"
+    }
+  },
+  "legal": {
+    "document": {
+      "versionLine": "Version {version} · in force since {date}",
+      "summaryTitle": "In short",
+      "summaryDisclaimer": "This summary exists to help you read and does not replace the text below, which is what counts.",
+      "tocTitle": "Contents",
+      "highlightNotice": "A clause limiting rights or liability — set apart as art. 54, §4 of the Brazilian Consumer Code requires."
+    },
+    "page": {
+      "home": "Home",
+      "back": "Back to the site",
+      "incompleteTitle": "Unfinished document.",
+      "incompleteBody": "The company’s identifying details have not been filled in yet (look for ⚠ in the text). Without them this document identifies nobody and must not be published.",
+      "governingLaw": "Governed by Brazilian law. The Portuguese version is the one that counts.",
+      "termsLink": "Terms of Use",
+      "privacyLink": "Privacy Policy"
+    }
+  },
+  "platform": {
+    "badge": "Platform",
+    "navLabel": "Platform navigation",
+    "footer": "Platform panel · restricted access",
+    "nav": {
+      "overview": "Overview",
+      "tenants": "Companies",
+      "plans": "Plans"
+    },
+    "status": {
+      "TRIAL": "Trial",
+      "ACTIVE": "Active",
+      "SUSPENDED": "Suspended",
+      "CANCELED": "Cancelled"
+    },
+    "overview": {
+      "title": "Overview",
+      "subtitle": "The numbers for the whole platform.",
+      "companiesTitle": "Companies",
+      "tenantsTotal": "Total",
+      "trial": "On trial",
+      "active": "Active",
+      "suspended": "Suspended",
+      "canceled": "Cancelled",
+      "usersTotal": "Users",
+      "chartTitle": "Signups per day",
+      "chartSubtitle": "Companies created in the last 30 days.",
+      "chartEmpty": "No signups in this window.",
+      "chartPoint": "{day}: {count} signups"
+    },
+    "tenants": {
+      "title": "Companies",
+      "subtitle": "Every company on the platform.",
+      "searchLabel": "Search",
+      "searchPlaceholder": "Name, slug or email",
+      "filterStatus": "Status",
+      "allStatuses": "All",
+      "tableCaption": "Companies registered on the platform",
+      "colCompany": "Company",
+      "colPlan": "Plan",
+      "colStatus": "Status",
+      "colUsers": "Users",
+      "colTrialEnds": "Trial ends",
+      "colCreated": "Created",
+      "colActions": "Actions",
+      "empty": "No companies found.",
+      "noPlan": "No plan",
+      "changePlan": "Change the plan of {name}",
+      "extendTrial": "Extend the trial of {name}",
+      "reactivate": "Reactivate {name}",
+      "suspend": "Suspend {name}",
+      "pageOf": "Page {page} of {totalPages}",
+      "previous": "Previous",
+      "next": "Next",
+      "reactivateTitle": "Reactivate company",
+      "reactivateConfirm": "Give access back to {name} and all of its users?"
+    },
+    "plans": {
+      "title": "Plans",
+      "subtitle": "The platform’s commercial catalogue.",
+      "newPlan": "New plan",
+      "tableCaption": "Commercial plans available",
+      "colName": "Plan",
+      "colPrice": "Price",
+      "colTrial": "Trial",
+      "colLimits": "Limits",
+      "colStatus": "Status",
+      "colActions": "Actions",
+      "empty": "No plans yet.",
+      "unlimited": "Unlimited",
+      "trialDaysValue": "{days, plural, one {# day} other {# days}}",
+      "limitsSummary": "{users} users · {storage} MB",
+      "activeTag": "Active",
+      "inactiveTag": "Inactive",
+      "edit": "Edit the plan {name}",
+      "form": {
+        "createTitle": "New plan",
+        "editTitle": "Edit plan",
+        "subtitle": "A blank limit means unlimited.",
+        "code": "Code",
+        "name": "Name",
+        "description": "Description",
+        "price": "Price",
+        "currency": "Currency",
+        "trialDays": "Trial days",
+        "sortOrder": "Sort order",
+        "maxUsers": "Max users",
+        "maxStorageMb": "Storage (MB)",
+        "unlimitedPlaceholder": "Unlimited",
+        "limits": "Per-resource limits (JSON)",
+        "limitsHint": "Counters specific to your product, e.g. {\"projects\": 10}. Left blank, the current limits stay as they are.",
+        "features": "Features (JSON)",
+        "featuresHint": "Boolean flags, e.g. {\"concurrentSessions\": true}. Left blank, the current ones stay as they are.",
+        "isDefault": "Default plan for new signups",
+        "active": "Available to sign up for",
+        "createSubmit": "Create plan",
+        "invalid": "Check the fields: some value is not accepted by the plan contract.",
+        "invalidJson": "Limits and features must be a valid JSON object."
+      }
+    },
+    "suspendDialog": {
+      "title": "Suspend {name}",
+      "description": "Suspending blocks access for {name} immediately.",
+      "effect": "Every user of that company loses access at once. The data stays stored.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why is this company being suspended?",
+      "reasonHint": "It is recorded and is what explains the suspension later. At least 3 characters.",
+      "confirm": "Suspend"
+    },
+    "planDialog": {
+      "title": "Change plan",
+      "description": "Pick the new plan for {name}.",
+      "planLabel": "Plan",
+      "choose": "Select…",
+      "confirm": "Change plan"
+    },
+    "trialDialog": {
+      "title": "Extend trial",
+      "description": "How many extra trial days for {name}?",
+      "daysLabel": "Days",
+      "daysHint": "From 1 to 365 days, counted from the current end date.",
+      "confirm": "Extend"
+    },
+    "toast": {
+      "tenantSuspended": "Company suspended.",
+      "tenantReactivated": "Company reactivated.",
+      "planChanged": "Plan changed.",
+      "trialExtended": "Trial extended.",
+      "planCreated": "Plan created.",
+      "planUpdated": "Plan updated."
+    }
   }
 }

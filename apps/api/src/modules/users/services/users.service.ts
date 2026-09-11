@@ -27,6 +27,7 @@ import type {
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { TenantContext } from '../../../infra/tenancy/tenant-context';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
 import {
   MAIL_PROVIDER,
@@ -84,7 +85,7 @@ export class UsersService {
 
   async updateProfile(userId: string, input: UpdateProfileInput): Promise<UserDto> {
     await this.requireActiveUser(userId);
-    const updated = await this.prisma.user.update({
+    const updated = await this.prisma.db.user.update({
       where: { id: userId },
       data: { name: input.name },
     });
@@ -107,13 +108,15 @@ export class UsersService {
     }
 
     const passwordHash = await argon2.hash(input.newPassword);
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { passwordHash },
     });
 
     // A password change invalidates every session — force re-login everywhere.
-    await this.tokenService.revokeAllForUser(userId);
+    // LOGOUT: the account's owner ended them on purpose. There is no dedicated
+    // reason for a password change and the wire contract could not express one.
+    await this.tokenService.revokeAllForUser(userId, 'LOGOUT');
     await this.audit('user.password_changed', userId, ctx);
   }
 
@@ -138,7 +141,7 @@ export class UsersService {
   /** "Not now": don't nudge again about 2FA for 24h. */
   async snoozeTwoFactorPrompt(userId: string): Promise<void> {
     await this.requireActiveUser(userId);
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { twoFactorRemindAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     });
@@ -177,7 +180,7 @@ export class UsersService {
     }
 
     const { raw, hashes } = await this.twoFactor.generateBackupCodes();
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { twoFactorSecret: pendingSecret, twoFactorEnabled: true },
     });
@@ -209,13 +212,15 @@ export class UsersService {
       throw new UnauthorizedException('Verification failed');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    // Disabling the factor and dropping the backup codes must land together —
+    // atomic() reuses the request's transaction instead of nesting a new one.
+    await this.prisma.atomic(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: { twoFactorEnabled: false, twoFactorSecret: null },
-      }),
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-    ]);
+      });
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+    });
     await this.cache.del(this.pendingSecretKey(userId));
     await this.audit('user.2fa_disabled', userId, ctx);
   }
@@ -225,7 +230,7 @@ export class UsersService {
   /** List active sessions, one per rotation family, marking the current one. */
   async listSessions(userId: string, currentFamilyId?: string): Promise<SessionDto[]> {
     await this.requireActiveUser(userId);
-    const tokens = await this.prisma.refreshToken.findMany({
+    const tokens = await this.prisma.db.refreshToken.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
     });
@@ -259,11 +264,13 @@ export class UsersService {
   /** Revoke one session (rotation family). Verifies it belongs to the caller. */
   async revokeSession(userId: string, familyId: string, ctx: RequestContext): Promise<void> {
     await this.requireActiveUser(userId);
-    const owned = await this.prisma.refreshToken.findFirst({ where: { userId, familyId } });
+    const owned = await this.prisma.db.refreshToken.findFirst({ where: { userId, familyId } });
     if (!owned) {
       throw new NotFoundException('Session not found');
     }
-    await this.tokenService.revokeFamily(familyId);
+    // The user ended this session from their own session list — a logout by
+    // another name, not theft.
+    await this.tokenService.revokeFamily(familyId, 'LOGOUT');
     await this.audit('user.session_revoked', userId, ctx, { familyId });
   }
 
@@ -277,7 +284,7 @@ export class UsersService {
     if (!currentFamilyId) {
       throw new BadRequestException('Cannot identify the current session');
     }
-    await this.tokenService.revokeOtherFamilies(userId, currentFamilyId);
+    await this.tokenService.revokeOtherFamilies(userId, currentFamilyId, 'LOGOUT');
     await this.audit('user.sessions_revoked_others', userId, ctx, { keep: currentFamilyId });
   }
 
@@ -304,7 +311,7 @@ export class UsersService {
     if (newEmail === user.email.toLowerCase()) {
       throw new BadRequestException('That is already your email address');
     }
-    const taken = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    const taken = await this.prisma.db.user.findUnique({ where: { email: newEmail } });
     if (taken && !taken.deletedAt) {
       throw new ConflictException('That email is already in use');
     }
@@ -338,12 +345,12 @@ export class UsersService {
     }
 
     // Re-check the address is still free (someone could have taken it meanwhile).
-    const taken = await this.prisma.user.findUnique({ where: { email: newEmail } });
+    const taken = await this.prisma.db.user.findUnique({ where: { email: newEmail } });
     if (taken && taken.id !== userId && !taken.deletedAt) {
       throw new ConflictException('That email is already in use');
     }
 
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { email: newEmail, emailVerified: true },
     });
@@ -357,7 +364,7 @@ export class UsersService {
 
   async exportData(userId: string): Promise<UserDataExport> {
     const user = await this.requireActiveUser(userId);
-    const auditLogs = await this.prisma.auditLog.findMany({
+    const auditLogs = await this.prisma.db.auditLog.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
@@ -382,8 +389,14 @@ export class UsersService {
     // Soft-delete + anonymize: keep the row for referential integrity and audit
     // lineage, but scrub PII and disable any path back into the account.
     const anonymousEmail = `deleted+${randomUUID()}@deleted.invalid`;
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    // Lock the credential so the anonymized account can never authenticate.
+    // Hashed before the transaction: Argon2 is deliberately slow and has no
+    // business holding a database transaction open.
+    const passwordHash = await argon2.hash(randomUUID());
+    // Anonymizing the row and dropping the backup codes is one unit of work;
+    // atomic() reuses the request's transaction instead of nesting a new one.
+    await this.prisma.atomic(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: {
           deletedAt: new Date(),
@@ -392,15 +405,14 @@ export class UsersService {
           avatarUrl: null,
           twoFactorEnabled: false,
           twoFactorSecret: null,
-          // Lock the credential so the anonymized account can never authenticate.
-          passwordHash: await argon2.hash(randomUUID()),
+          passwordHash,
         },
-      }),
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-    ]);
+      });
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+    });
 
     // Kill every session and the pending-2FA cache entry.
-    await this.tokenService.revokeAllForUser(userId);
+    await this.tokenService.revokeAllForUser(userId, 'LOGOUT');
     await this.cache.del(this.pendingSecretKey(userId));
     await this.audit('user.account_erased', userId, ctx);
   }
@@ -409,7 +421,7 @@ export class UsersService {
 
   /** Fetch a non-deleted user or fail. Soft-deleted accounts behave as gone. */
   private async requireActiveUser(userId: string): Promise<User> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.db.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -425,10 +437,17 @@ export class UsersService {
     ctx: RequestContext,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    // The audit row has to satisfy the SAME RLS check as the request that
+    // produced it. Written without a tenant while the request runs in tenant
+    // scope, Postgres refuses it — and a refused statement aborts the whole
+    // transaction, taking the operation being audited down with it. Swallowing
+    // the error below would hide that, not undo it.
+    const scope = TenantContext.get()?.scope;
     try {
-      await this.prisma.auditLog.create({
+      await this.prisma.db.auditLog.create({
         data: {
           action,
+          tenantId: scope?.kind === 'tenant' ? scope.tenantId : null,
           userId,
           ip: ctx.ip ?? null,
           userAgent: ctx.userAgent ?? null,

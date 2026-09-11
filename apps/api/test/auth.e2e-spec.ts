@@ -1,7 +1,6 @@
 import { generate } from 'otplib';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { PrismaService } from '../src/infra/prisma/prisma.service';
-import { createE2EApp, resetDb } from './e2e-app';
+import { createE2EApp, closeOwnerDb, ownerDb, resetDb } from './e2e-app';
 import { E2EClient } from './e2e-client';
 
 /**
@@ -12,25 +11,47 @@ import { E2EClient } from './e2e-client';
  * We exercise the genuine double-submit CSRF path (token fetched, cookie +
  * header echoed) and the httpOnly cookie session: login sets `access_token` /
  * `refresh_token`, /users/me reads them, refresh rotates them, logout clears.
+ *
+ * Accounts are born through `POST /auth/signup`, because in a multi-tenant
+ * product that is what public registration is: a company and its first
+ * administrator, created together. A user with no company would be refused by
+ * `TenantStatusGuard` on the very next request.
  */
 describe('Auth & Users (e2e)', () => {
   let app: NestFastifyApplication;
-  let prisma: PrismaService;
 
   const STRONG_PASSWORD = 'Sup3rSecret!';
   const NEW_PASSWORD = 'Even5tronger!';
 
+  /**
+   * Prefix on every slug and e-mail this suite creates.
+   *
+   * The suites share one database and hand it back empty (see the isolation
+   * contract at the top of `test/e2e-app.ts`). The prefix is what makes a row
+   * that escaped anyway point straight at the suite that left it, instead of
+   * failing somewhere else as an unexplained duplicate.
+   */
+  const SUITE = 'authe2e';
+
+  /** Rows read directly go through the owner connection: the app's restricted
+   *  role sees nothing outside a tenant scope, so it would report every table
+   *  as empty and every assertion would pass for the wrong reason. */
+  const db = ownerDb();
+
   beforeAll(async () => {
     app = await createE2EApp();
-    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
+    // Hand the database back empty: the next suite's createE2EApp() asserts it
+    // (see the isolation contract at the top of test/e2e-app.ts).
+    await resetDb();
     await app.close();
+    await closeOwnerDb();
   });
 
   beforeEach(async () => {
-    await resetDb(prisma);
+    await resetDb();
   });
 
   /** A fresh, CSRF-primed client per use — keeps cookie jars isolated. */
@@ -40,17 +61,37 @@ describe('Auth & Users (e2e)', () => {
     return client;
   }
 
-  /** Register + verify email + log in; returns a logged-in client. */
-  async function registerVerifyLogin(
-    email: string,
-    password = STRONG_PASSWORD,
-    name = 'Arthur Dent',
-  ): Promise<{ client: E2EClient; userId: string }> {
-    const client = await newClient();
+  /** The company and the e-mail one `handle` gets, both inside our namespace. */
+  function accountFor(handle: string): { slug: string; email: string } {
+    return { slug: `${SUITE}-${handle}`, email: `${handle}@${SUITE}.test` };
+  }
 
-    const reg = await client.post('/api/auth/register', { email, password, name });
-    expect(reg.status).toBe(201);
-    const userId = reg.body.id as string;
+  /** The full signup body for a handle; `over` tweaks one field at a time. */
+  function signupBody(handle: string, over: Record<string, unknown> = {}) {
+    const { slug, email } = accountFor(handle);
+    return {
+      companyName: `${handle} & co`,
+      slug,
+      name: 'Arthur Dent',
+      email,
+      password: STRONG_PASSWORD,
+      acceptTerms: true,
+      ...over,
+    };
+  }
+
+  /** Sign up a company + verify its admin's email + log in; returns the client. */
+  async function signupVerifyLogin(
+    handle: string,
+    password = STRONG_PASSWORD,
+  ): Promise<{ client: E2EClient; userId: string; email: string; tenantId: string }> {
+    const client = await newClient();
+    const { email } = accountFor(handle);
+
+    const signup = await client.post('/api/auth/signup', signupBody(handle, { password }));
+    expect(signup.status).toBe(201);
+    const userId = signup.body.user.id as string;
+    const tenantId = signup.body.tenant.id as string;
 
     // The raw code isn't persisted (only its hash) and the console mail driver
     // doesn't surface it — so force a known code onto the DB row, then verify.
@@ -64,7 +105,7 @@ describe('Auth & Users (e2e)', () => {
     expect(client.hasCookie('access_token')).toBe(true);
     expect(client.hasCookie('refresh_token')).toBe(true);
 
-    return { client, userId };
+    return { client, userId, email, tenantId };
   }
 
   /**
@@ -75,12 +116,12 @@ describe('Auth & Users (e2e)', () => {
   async function forceVerificationCode(userId: string): Promise<string> {
     const { sha256 } = await import('../src/modules/auth/support/crypto.util');
     const code = '123456';
-    const record = await prisma.emailVerificationToken.findFirst({
+    const record = await db.emailVerificationToken.findFirst({
       where: { userId, usedAt: null },
       orderBy: { createdAt: 'desc' },
     });
-    if (!record) throw new Error('no email verification token row created by register');
-    await prisma.emailVerificationToken.update({
+    if (!record) throw new Error('no email verification token row created by signup');
+    await db.emailVerificationToken.update({
       where: { id: record.id },
       data: { tokenHash: sha256(code) },
     });
@@ -90,12 +131,12 @@ describe('Auth & Users (e2e)', () => {
   async function rawPasswordResetToken(userId: string): Promise<string> {
     const { sha256 } = await import('../src/modules/auth/support/crypto.util');
     const raw = `e2e-reset-${userId}-token-1234567890`;
-    const record = await prisma.passwordResetToken.findFirst({
+    const record = await db.passwordResetToken.findFirst({
       where: { userId, usedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     if (!record) throw new Error('no password reset token row created by forgot-password');
-    await prisma.passwordResetToken.update({
+    await db.passwordResetToken.update({
       where: { id: record.id },
       data: { tokenHash: sha256(raw) },
     });
@@ -103,16 +144,21 @@ describe('Auth & Users (e2e)', () => {
   }
 
   // ---------------------------------------------------------------------------
-  // Happy path: register -> verify -> login -> /me -> refresh -> logout
+  // Happy path: signup -> verify -> login -> /me -> refresh -> logout
   // ---------------------------------------------------------------------------
 
-  it('completes the full register -> verify -> login -> me -> refresh -> logout flow', async () => {
-    const email = 'arthur@heart-of-gold.test';
-    const { client, userId } = await registerVerifyLogin(email);
+  it('completes the full signup -> verify -> login -> me -> refresh -> logout flow', async () => {
+    const { client, userId, email, tenantId } = await signupVerifyLogin('arthur');
 
     // emailVerified flipped in the DB.
-    const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+    const dbUser = await db.user.findUnique({ where: { id: userId } });
     expect(dbUser?.emailVerified).toBe(true);
+
+    // Signup created the company too, and made this user its administrator —
+    // without that, every authenticated request below would be a 403.
+    expect(dbUser?.tenantId).toBe(tenantId);
+    expect(dbUser?.role).toBe('ADMIN');
+    expect(await db.profile.count({ where: { tenantId } })).toBe(2);
 
     // /users/me reads the access_token cookie and returns the profile.
     const me = await client.get('/api/users/me');
@@ -122,7 +168,7 @@ describe('Auth & Users (e2e)', () => {
     expect(me.body).not.toHaveProperty('passwordHash');
 
     // Refresh rotates: a new refresh_token row is minted, old one revoked.
-    const beforeTokens = await prisma.refreshToken.findMany({ where: { userId } });
+    const beforeTokens = await db.refreshToken.findMany({ where: { userId } });
     expect(beforeTokens).toHaveLength(1);
     const oldRefresh = client.getCookie('refresh_token');
 
@@ -130,7 +176,7 @@ describe('Auth & Users (e2e)', () => {
     expect(refresh.status).toBe(200);
     expect(client.getCookie('refresh_token')).not.toBe(oldRefresh);
 
-    const afterTokens = await prisma.refreshToken.findMany({
+    const afterTokens = await db.refreshToken.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' },
     });
@@ -148,7 +194,7 @@ describe('Auth & Users (e2e)', () => {
     expect(logout.status).toBe(200);
     expect(client.hasCookie('refresh_token')).toBe(false);
 
-    const live = await prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
+    const live = await db.refreshToken.findMany({ where: { userId, revokedAt: null } });
     expect(live).toHaveLength(0);
   });
 
@@ -157,7 +203,7 @@ describe('Auth & Users (e2e)', () => {
   // ---------------------------------------------------------------------------
 
   it('detects refresh-token reuse and revokes the whole family', async () => {
-    const { client, userId } = await registerVerifyLogin('ford@betelgeuse.test');
+    const { client, userId } = await signupVerifyLogin('ford');
     const stolen = client.getCookie('refresh_token');
 
     // Legitimate rotation: client now holds a new token; `stolen` is revoked.
@@ -175,13 +221,13 @@ describe('Auth & Users (e2e)', () => {
     });
     expect(replay.status).toBe(401);
 
-    const live = await prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
+    const live = await db.refreshToken.findMany({ where: { userId, revokedAt: null } });
     expect(live).toHaveLength(0); // even the freshly-minted token was nuked
   });
 
   /** Push every rotation of this user well outside the reuse grace window. */
   async function ageRotation(userId: string): Promise<void> {
-    await prisma.refreshToken.updateMany({
+    await db.refreshToken.updateMany({
       where: { userId, NOT: { revokedAt: null } },
       data: { revokedAt: new Date(Date.now() - 60 * 60 * 1000) },
     });
@@ -193,13 +239,9 @@ describe('Auth & Users (e2e)', () => {
 
   it('gives the access cookie the session lifetime, not the JWT lifetime', async () => {
     const client = await newClient();
-    const email = 'zaphod@presidency.test';
-    const reg = await client.post('/api/auth/register', {
-      email,
-      password: STRONG_PASSWORD,
-      name: 'Zaphod',
-    });
-    const code = await forceVerificationCode(reg.body.id as string);
+    const { email } = accountFor('zaphod');
+    const signup = await client.post('/api/auth/signup', signupBody('zaphod'));
+    const code = await forceVerificationCode(signup.body.user.id as string);
     await client.post('/api/auth/verify-email', { email, code });
 
     const login = await client.post('/api/auth/login', { email, password: STRONG_PASSWORD });
@@ -220,7 +262,7 @@ describe('Auth & Users (e2e)', () => {
   });
 
   it('survives two simultaneous refreshes with the same token', async () => {
-    const { client, userId } = await registerVerifyLogin('trillian@heart-of-gold.test');
+    const { client, userId } = await signupVerifyLogin('trillian');
     const shared = client.getCookie('refresh_token')!;
 
     // Two tabs (or two parallel queries) each hit refresh with the SAME cookie,
@@ -234,7 +276,7 @@ describe('Auth & Users (e2e)', () => {
     expect(b.status).toBe(200);
 
     // The session is intact: losing that race is concurrency, not theft.
-    const live = await prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
+    const live = await db.refreshToken.findMany({ where: { userId, revokedAt: null } });
     expect(live.length).toBeGreaterThan(0);
 
     // And the session still works afterwards.
@@ -243,7 +285,7 @@ describe('Auth & Users (e2e)', () => {
   });
 
   it('clears the auth cookies when the refresh is rejected', async () => {
-    const { client, userId } = await registerVerifyLogin('marvin@sirius.test');
+    const { client, userId } = await signupVerifyLogin('marvin');
     const stolen = client.getCookie('refresh_token')!;
 
     await client.post('/api/auth/refresh');
@@ -272,8 +314,7 @@ describe('Auth & Users (e2e)', () => {
   // ---------------------------------------------------------------------------
 
   it('rejects login with the wrong password (generic 401)', async () => {
-    const email = 'trillian@heart-of-gold.test';
-    const { client } = await registerVerifyLogin(email);
+    const { client, email } = await signupVerifyLogin('trillian');
     client.clearAuthCookies();
 
     const res = await client.post('/api/auth/login', { email, password: 'WrongPass9!' });
@@ -284,7 +325,7 @@ describe('Auth & Users (e2e)', () => {
   it('rejects login for an unknown email with the same generic 401', async () => {
     const client = await newClient();
     const res = await client.post('/api/auth/login', {
-      email: 'nobody@nowhere.test',
+      email: `nobody@${SUITE}.test`,
       password: STRONG_PASSWORD,
     });
     expect(res.status).toBe(401);
@@ -292,37 +333,64 @@ describe('Auth & Users (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Registration conflict.
+  // Signup conflicts and validation.
   // ---------------------------------------------------------------------------
 
-  it('returns 409 when registering a duplicate email', async () => {
+  it('returns 409 when signing up with an email that already has an account', async () => {
     const client = await newClient();
-    const email = 'zaphod@president.test';
-    const first = await client.post('/api/auth/register', {
-      email,
-      password: STRONG_PASSWORD,
-      name: 'Zaphod',
-    });
+    const { email } = accountFor('zaphod');
+    const first = await client.post('/api/auth/signup', signupBody('zaphod'));
     expect(first.status).toBe(201);
 
-    const second = await client.post('/api/auth/register', {
-      email,
-      password: STRONG_PASSWORD,
-      name: 'Zaphod II',
-    });
+    // A different company, the same person: the e-mail is what collides.
+    const second = await client.post(
+      '/api/auth/signup',
+      signupBody('zaphod', { slug: `${SUITE}-zaphod-two`, companyName: 'Presidency II' }),
+    );
     expect(second.status).toBe(409);
-    // Only one row exists.
-    expect(await prisma.user.count({ where: { email } })).toBe(1);
+
+    // Only one account — and only one company — came out of the two attempts.
+    expect(await db.user.count({ where: { email } })).toBe(1);
+    expect(await db.tenant.count()).toBe(1);
   });
 
-  it('rejects registration with a weak password (422 from Zod pipe)', async () => {
+  it('returns 409 when the company address is already taken', async () => {
     const client = await newClient();
-    const res = await client.post('/api/auth/register', {
-      email: 'weak@pw.test',
-      password: 'short',
-      name: 'Weak',
-    });
+    const first = await client.post('/api/auth/signup', signupBody('slarti'));
+    expect(first.status).toBe(201);
+
+    const second = await client.post(
+      '/api/auth/signup',
+      signupBody('slarti', { email: `someone-else@${SUITE}.test` }),
+    );
+    expect(second.status).toBe(409);
+    expect(await db.tenant.count()).toBe(1);
+  });
+
+  it('refuses a reserved company address (409) and leaves nothing behind', async () => {
+    const client = await newClient();
+    const res = await client.post('/api/auth/signup', signupBody('agrajag', { slug: 'admin' }));
+    expect(res.status).toBe(409);
+    expect(await db.tenant.count()).toBe(0);
+    expect(await db.user.count()).toBe(0);
+  });
+
+  it('rejects signup with a weak password (400 from the Zod pipe)', async () => {
+    const client = await newClient();
+    const res = await client.post('/api/auth/signup', signupBody('weak', { password: 'short' }));
     expect(res.status).toBe(400);
+  });
+
+  it('rejects signup when the terms were not accepted (400 from the Zod pipe)', async () => {
+    const client = await newClient();
+    // `acceptTerms` is z.literal(true): `false` is a validation failure, never a
+    // recorded refusal. Nothing is created, so there is no consent to explain.
+    const res = await client.post(
+      '/api/auth/signup',
+      signupBody('refuser', { acceptTerms: false }),
+    );
+    expect(res.status).toBe(400);
+    expect(await db.tenant.count()).toBe(0);
   });
 
   // ---------------------------------------------------------------------------
@@ -339,11 +407,7 @@ describe('Auth & Users (e2e)', () => {
   it('rejects an unsafe request without a CSRF token (403)', async () => {
     // Fresh client that has NOT bootstrapped a csrf token.
     const client = new E2EClient(app);
-    const res = await client.post('/api/auth/register', {
-      email: 'csrf@missing.test',
-      password: STRONG_PASSWORD,
-      name: 'No CSRF',
-    });
+    const res = await client.post('/api/auth/signup', signupBody('nocsrf'));
     expect(res.status).toBe(403);
   });
 
@@ -354,7 +418,7 @@ describe('Auth & Users (e2e)', () => {
   it('rejects an invalid email-verification code (400)', async () => {
     const client = await newClient();
     const res = await client.post('/api/auth/verify-email', {
-      email: 'nobody@dontpanic.test',
+      email: `nobody@${SUITE}.test`,
       code: '000000',
     });
     expect(res.status).toBe(400);
@@ -365,11 +429,10 @@ describe('Auth & Users (e2e)', () => {
   // ---------------------------------------------------------------------------
 
   it('resets a password and invalidates existing sessions', async () => {
-    const email = 'marvin@sirius.test';
-    const { client, userId } = await registerVerifyLogin(email);
+    const { client, userId, email } = await signupVerifyLogin('marvin');
 
     // A live session exists (we're logged in).
-    expect(await prisma.refreshToken.count({ where: { userId, revokedAt: null } })).toBe(1);
+    expect(await db.refreshToken.count({ where: { userId, revokedAt: null } })).toBe(1);
 
     // forgot-password always 200s.
     const forgot = await client.post('/api/auth/forgot-password', { email });
@@ -380,7 +443,7 @@ describe('Auth & Users (e2e)', () => {
     expect(reset.status).toBe(200);
 
     // Old sessions revoked by the reset.
-    expect(await prisma.refreshToken.count({ where: { userId, revokedAt: null } })).toBe(0);
+    expect(await db.refreshToken.count({ where: { userId, revokedAt: null } })).toBe(0);
 
     // Old password no longer works; new one does.
     const fresh = await newClient();
@@ -406,8 +469,7 @@ describe('Auth & Users (e2e)', () => {
   // ---------------------------------------------------------------------------
 
   it('locks the account after too many failed logins (generic 401 throughout)', async () => {
-    const email = 'slartibartfast@magrathea.test';
-    const { userId } = await registerVerifyLogin(email);
+    const { userId, email } = await signupVerifyLogin('slarti');
     const attacker = await newClient();
 
     // LOGIN_MAX_ATTEMPTS defaults to 5. Burn 5 wrong passwords.
@@ -417,7 +479,7 @@ describe('Auth & Users (e2e)', () => {
     }
 
     // The account row is now locked.
-    const locked = await prisma.user.findUnique({ where: { id: userId } });
+    const locked = await db.user.findUnique({ where: { id: userId } });
     expect(locked?.lockedUntil).not.toBeNull();
     expect(locked!.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
 
@@ -434,8 +496,7 @@ describe('Auth & Users (e2e)', () => {
   // ---------------------------------------------------------------------------
 
   it('enables 2FA and completes a TOTP login challenge', async () => {
-    const email = 'eddie@heart-of-gold.test';
-    const { client, userId } = await registerVerifyLogin(email);
+    const { client, userId, email } = await signupVerifyLogin('eddie');
 
     // 1. setup -> returns a base32 secret stashed in the (memory) cache.
     const setup = await client.post('/api/users/me/2fa/setup');
@@ -450,7 +511,7 @@ describe('Auth & Users (e2e)', () => {
     expect(Array.isArray(enable.body.backupCodes)).toBe(true);
     expect(enable.body.backupCodes).toHaveLength(10);
 
-    const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+    const dbUser = await db.user.findUnique({ where: { id: userId } });
     expect(dbUser?.twoFactorEnabled).toBe(true);
     expect(dbUser?.twoFactorSecret).toBe(secret);
 
@@ -480,8 +541,7 @@ describe('Auth & Users (e2e)', () => {
   });
 
   it('rejects a 2FA challenge with a wrong code (401) and a backup code works', async () => {
-    const email = 'benjy@mouse.test';
-    const { client } = await registerVerifyLogin(email);
+    const { client, email } = await signupVerifyLogin('benjy');
 
     const setup = await client.post('/api/users/me/2fa/setup');
     const secret = setup.body.secret as string;

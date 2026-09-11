@@ -1,0 +1,220 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform and tenancy — the root of all multi-tenant isolation.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A commercial plan. No payment gateway here: the plan describes limits and
+/// feature flags, and the platform operator activates or suspends by hand.
+/// Wire a billing provider to it when the product needs one.
+model Plan {
+  id           String  @id @default(uuid()) @db.Uuid
+  code         String  @unique
+  name         String
+  description  String?
+  /// List price, informational until a payment gateway exists.
+  priceCents   Int     @default(0)
+  currency     String  @default("BRL")
+  trialDays    Int     @default(14)
+  maxUsers     Int?
+  maxStorageMb Int?
+  /// Product-specific counters, e.g. `{"projects": 10}`. Enforced by
+  /// PlanLimitsService; null or absent means unlimited.
+  limits       Json    @default("{}")
+  /// Feature flags read by the plan guard, e.g. `{"concurrentSessions": true}`.
+  /// Absent, malformed or false all mean NO — a plan nobody touched must not
+  /// open a door by accident.
+  features     Json    @default("{}")
+  sortOrder    Int     @default(0)
+  /// The plan a public signup lands on. Exactly one plan should carry it.
+  isDefault    Boolean @default(false)
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenants Tenant[]
+
+  @@map("plans")
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELED
+}
+
+/// A customer company. This is the isolation boundary: every product row points
+/// at a tenant and Postgres enforces it through RLS.
+model Tenant {
+  id        String  @id @default(uuid()) @db.Uuid
+  /// Short identifier used in URLs and subdomains. Reserved names are refused
+  /// by the API — see RESERVED_TENANT_SLUGS in @dontpanic/shared.
+  slug      String  @unique
+  name      String
+  legalName String?
+  /// National tax id, digits only. Validate it with the optional locale module
+  /// (@dontpanic/shared locale/br for CPF/CNPJ) when the product needs it.
+  taxId     String?
+  email     String
+  phone     String?
+
+  postalCode String?
+  street     String?
+  number     String?
+  complement String?
+  district   String?
+  city       String?
+  state      String?
+  country    String?
+  /// Starting defaults for a new tenant — change them for your product.
+  locale     String  @default("pt-BR")
+  currency   String  @default("BRL")
+  timezone   String  @default("America/Sao_Paulo")
+
+  planId          String?      @db.Uuid
+  plan            Plan?        @relation(fields: [planId], references: [id], onDelete: SetNull)
+  status          TenantStatus @default(TRIAL)
+  trialEndsAt     DateTime?
+  suspendedAt     DateTime?
+  /// Recorded by the platform operator when suspending — shown in /admin.
+  suspendedReason String?
+  canceledAt      DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users            User[]
+  branding         TenantBranding?
+  parameters       TenantParameter[]
+  profiles         Profile[]
+  auditLogs        AuditLog[]
+  legalAcceptances LegalAcceptance[]
+
+  @@index([status])
+  @@index([planId])
+  @@map("tenants")
+}
+
+/// Visual identity for generated documents and any public page.
+model TenantBranding {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @unique @db.Uuid
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  logoUrl        String?
+  primaryColor   String   @default("#0D9488")
+  secondaryColor String   @default("#D97706")
+  typography     String?
+  documentFooter String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("tenant_branding")
+}
+
+/// Per-tenant settings as free-form key/value JSON.
+///
+/// The point is to avoid a migration every time the product needs one more
+/// knob: thresholds, ratios, defaults, feature toggles scoped to one company.
+model TenantParameter {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("tenant_parameters")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Users, profiles and permissions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Platform-level role. SUPERADMIN is the SaaS operator: belongs to no tenant
+/// and is the only one who gets into /admin. The other two are roles inside a
+/// tenant; fine-grained access lives in Profile/Permission.
+enum Role {
+  SUPERADMIN
+  ADMIN
+  USER
+}
+
+model User {
+  id                  String    @id @default(uuid()) @db.Uuid
+  /// Null only for SUPERADMIN — the platform operator has no tenant.
+  tenantId            String?   @db.Uuid
+  tenant              Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Unique **globally**, not per tenant. That is what lets someone sign in
+  /// with just e-mail and password, with no company selector: the tenant is
+  /// discovered from the user. The trade-off is that one person needs two
+  /// e-mails to work for two companies.
+  email               String    @unique
+  passwordHash        String
+  name                String
+  avatarUrl           String?
+  role                Role      @default(USER)
+  profileId           String?   @db.Uuid
+  profile             Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  emailVerified       Boolean   @default(false)
+  twoFactorEnabled    Boolean   @default(false)
+  twoFactorSecret     String?
+  twoFactorRemindAt   DateTime? // optional-mode: when to next nudge about enabling 2FA
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  active              Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime? // soft delete (LGPD right to erasure)
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerifications  EmailVerificationToken[]
+  backupCodes         TwoFactorBackupCode[]
+  auditLogs           AuditLog[]
+  legalAcceptances    LegalAcceptance[]
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+/// An access profile inside a tenant. Created by the signup flow; which ones
+/// exist and what they may do is product-specific — see SYSTEM_PROFILES and
+/// the permission matrix in @dontpanic/shared.
+model Profile {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  /// System profiles are created at onboarding and cannot be deleted.
+  system    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  permissions Permission[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("profiles")
+}
+
+model Permission {
+  id        String  @id @default(uuid()) @db.Uuid
+  profileId String  @db.Uuid
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// A product module — the list lives in @dontpanic/shared as permissionModules.
+  module    String
+  /// read | create | update | delete | approve | export
+  action    String
+
+  @@unique([profileId, module, action])
+  @@index([profileId])
+  @@map("permissions")
+}

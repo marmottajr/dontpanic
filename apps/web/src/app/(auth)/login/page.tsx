@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -11,6 +11,9 @@ import { toast } from 'sonner';
 import { loginSchema, type LoginInput, type LoginResponse } from '@dontpanic/shared';
 import { useLogin } from '@/hooks/use-auth';
 import { api, ApiError } from '@/lib/api';
+import { safeInternalPath } from '@/lib/safe-path';
+import { Captcha, type CaptchaHandle } from '@/components/captcha';
+import { captchaEnabled } from '@/lib/captcha';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,11 +34,13 @@ export default function LoginPage() {
   const t = useTranslations('auth.login');
   const tc = useTranslations('common');
   const tErr = useTranslations('errors');
+  const tCaptcha = useTranslations('auth.captcha');
   const router = useRouter();
   const searchParams = useSearchParams();
   const login = useLogin();
 
   const [showPassword, setShowPassword] = useState(false);
+  const captchaRef = useRef<CaptchaHandle>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
   // 2FA challenge state — the card swaps to a code step when the API asks for it.
@@ -53,22 +58,37 @@ export default function LoginPage() {
   });
 
   const goNext = () => {
-    const from = searchParams.get('from');
-    router.push(from && from.startsWith('/') ? from : '/');
+    // `from` comes from the address bar, so it's whatever anyone puts there.
+    // It's resolved against the current origin instead of matched by pattern:
+    // the browser reads both `//evil.com` and `/\evil.com` as absolute URLs,
+    // and plugging one case at a time always leaves the next one out.
+    const target = safeInternalPath(searchParams.get('from'), window.location.origin) ?? '/';
+    router.push(target);
     router.refresh();
   };
 
   const onSubmit = handleSubmit(async (values) => {
     setAuthError(null);
+    const captchaToken = await captchaRef.current?.getToken();
+    if (captchaEnabled && !captchaToken) {
+      setAuthError(tCaptcha('required'));
+      return;
+    }
     try {
-      const res = await login.mutateAsync(values);
+      const res = await login.mutateAsync({ ...values, captchaToken: captchaToken ?? undefined });
       if ('twoFactorRequired' in res && res.twoFactorRequired) {
         setTicket(res.ticket);
         return;
       }
       goNext();
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 400)) {
+      // Tokens are single-use: a rejected submit needs a fresh challenge.
+      captchaRef.current?.reset();
+      if (err instanceof ApiError && err.status === 400 && err.body?.error === 'CaptchaRequired') {
+        setAuthError(tCaptcha('failed'));
+      } else if (err instanceof ApiError && err.status === 503) {
+        setAuthError(tCaptcha('unavailable'));
+      } else if (err instanceof ApiError && (err.status === 401 || err.status === 400)) {
         setAuthError(t('invalid'));
       } else if (err instanceof ApiError && err.status === 423) {
         setAuthError(t('locked'));
@@ -197,6 +217,7 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+          <Captcha ref={captchaRef} action="login" />
         </CardContent>
         <CardFooter className="flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isSubmitting}>
@@ -206,7 +227,7 @@ export default function LoginPage() {
           <p className="text-center text-sm text-muted-foreground">
             {t('noAccount')}{' '}
             <Link
-              href="/register"
+              href="/signup"
               className="font-medium text-primary underline-offset-4 hover:underline"
             >
               {t('signup')}

@@ -64,15 +64,19 @@ export class AdminUsersService {
         }
       : {};
 
-    const [total, users] = await this.prisma.$transaction([
-      this.prisma.user.count({ where }),
-      this.prisma.user.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+    // One transaction so the count and the page are read from the same snapshot
+    // — atomic() reuses the request's transaction when there already is one.
+    const [total, users] = await this.prisma.atomic(async (tx) =>
+      Promise.all([
+        tx.user.count({ where }),
+        tx.user.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ]),
+    );
 
     return {
       items: users.map((u) => this.toAdminUser(u)),
@@ -91,13 +95,13 @@ export class AdminUsersService {
     const email = input.email.toLowerCase();
     // Reject any existing email, including soft-deleted rows that still hold the
     // unique index (a soft-deleted account keeps its address) — avoids a 500.
-    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const existing = await this.prisma.db.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
 
     const passwordHash = await argon2.hash(input.password);
-    const user = await this.prisma.user.create({
+    const user = await this.prisma.db.user.create({
       data: { email, name: input.name, passwordHash, role: input.role, emailVerified: true },
     });
     await this.audit('admin.user_created', adminId, ctx, {
@@ -118,7 +122,7 @@ export class AdminUsersService {
       throw new BadRequestException("You can't change your own role");
     }
     await this.requireUser(targetId);
-    const updated = await this.prisma.user.update({ where: { id: targetId }, data: { role } });
+    const updated = await this.prisma.db.user.update({ where: { id: targetId }, data: { role } });
     await this.audit('admin.role_changed', adminId, ctx, { targetId, role });
     return this.toAdminUser(updated);
   }
@@ -135,11 +139,13 @@ export class AdminUsersService {
     await this.requireUser(targetId);
     // A century out is effectively permanent; unlock clears it.
     const lockedUntil = locked ? new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000) : null;
-    const updated = await this.prisma.user.update({
+    const updated = await this.prisma.db.user.update({
       where: { id: targetId },
       data: { lockedUntil, failedLoginAttempts: 0 },
     });
-    if (locked) await this.tokenService.revokeAllForUser(targetId);
+    // An admin locking or deleting an account ends its sessions. LOGOUT is the
+    // closest stored reason: the ending was deliberate, not a replay.
+    if (locked) await this.tokenService.revokeAllForUser(targetId, 'LOGOUT');
     await this.audit(locked ? 'admin.user_locked' : 'admin.user_unlocked', adminId, ctx, {
       targetId,
     });
@@ -153,7 +159,7 @@ export class AdminUsersService {
     await this.requireUser(targetId);
     // Soft-delete AND anonymize (same as LGPD erasure): scrub PII and free the
     // email so a brand-new account can reuse it. The row stays for audit lineage.
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: targetId },
       data: {
         deletedAt: new Date(),
@@ -165,12 +171,12 @@ export class AdminUsersService {
         passwordHash: await argon2.hash(randomUUID()),
       },
     });
-    await this.tokenService.revokeAllForUser(targetId);
+    await this.tokenService.revokeAllForUser(targetId, 'LOGOUT');
     await this.audit('admin.user_deleted', adminId, ctx, { targetId });
   }
 
   private async requireUser(id: string): Promise<User> {
-    const user = await this.prisma.user.findUnique({ where: { id } });
+    const user = await this.prisma.db.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -182,7 +188,7 @@ export class AdminUsersService {
     metadata: Record<string, unknown>,
   ): Promise<void> {
     try {
-      await this.prisma.auditLog.create({
+      await this.prisma.db.auditLog.create({
         data: {
           action,
           userId: actorId,

@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { userDtoSchema } from './user';
 import { emailSchema, passwordSchema } from './primitives';
 
-export const registerSchema = z.object({
-  email: emailSchema,
-  password: passwordSchema,
-  name: z.string().min(1).max(120),
-});
-export type RegisterInput = z.infer<typeof registerSchema>;
+/**
+ * Captcha token, when CAPTCHA_DRIVER is on. Optional in the contract because
+ * the requirement is a deployment setting, not a shape: the API's CaptchaGuard
+ * is what enforces it, and it stays silent while the driver is `none`.
+ */
+export const captchaTokenSchema = z.string().min(1).max(4096).optional();
 
 export const verifyEmailSchema = z.object({
   email: emailSchema,
@@ -17,21 +17,27 @@ export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 
 export const resendVerificationSchema = z.object({
   email: emailSchema,
+  captchaToken: captchaTokenSchema,
 });
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1).max(128),
+  captchaToken: captchaTokenSchema,
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
-export const forgotPasswordSchema = z.object({ email: emailSchema });
+export const forgotPasswordSchema = z.object({
+  email: emailSchema,
+  captchaToken: captchaTokenSchema,
+});
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(10),
   password: passwordSchema,
+  captchaToken: captchaTokenSchema,
 });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
@@ -99,3 +105,35 @@ export const csrfTokenResponseSchema = z.object({
   csrfToken: z.string(),
 });
 export type CsrfTokenResponse = z.infer<typeof csrfTokenResponseSchema>;
+
+/**
+ * Why a session ended, as it reaches the browser.
+ *
+ * It exists so the app can EXPLAIN itself. Without it, someone signed out
+ * because another person logged in with the same password sees the ordinary
+ * login screen and concludes the system is broken. With it, they see what
+ * happened and the advice to change their password if it was not them — which
+ * is the only moment that advice is useful.
+ *
+ * `ROTATED` never reaches a client: it is the ordinary, invisible case.
+ */
+export const sessionEndReasons = [
+  'logout',
+  'reuse-detected',
+  'signed-in-elsewhere',
+  'expired',
+] as const;
+export const sessionEndReasonSchema = z.enum(sessionEndReasons);
+export type SessionEndedReason = (typeof sessionEndReasons)[number];
+
+/**
+ * The one extra field a 401 may carry beyond the standard error envelope.
+ *
+ * Deliberately an allowlist of exactly one key: the error body is a contract
+ * with the browser, and spreading whatever an exception happened to hold would
+ * turn every internal field into an accidental public API.
+ */
+export const sessionEndedSchema = z.object({
+  sessionEnded: sessionEndReasonSchema,
+});
+export type SessionEnded = z.infer<typeof sessionEndedSchema>;

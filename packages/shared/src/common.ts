@@ -29,4 +29,9 @@ export interface ApiErrorBody {
   /** Marvin's deadpan, non-sensitive commentary. */
   marvin?: string;
   requestId?: string;
+  /**
+   * Why the session ended, on a 401 that killed it. The ONLY exception-carried
+   * field the filter copies through — see `sessionEndReasons` in ./auth.
+   */
+  sessionEnded?: string;
 }

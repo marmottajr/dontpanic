@@ -1,6 +1,6 @@
 import {
   BadRequestException,
-  ConflictException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -9,16 +9,18 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
+import type { SessionEndReason } from '@prisma/client';
 import type {
   ForgotPasswordInput,
   LoginInput,
-  RegisterInput,
   ResetPasswordInput,
+  SessionEndedReason,
   TwoFactorChallenge,
   UserDto,
 } from '@dontpanic/shared';
 import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { TenantContext } from '../../../infra/tenancy/tenant-context';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
 import {
   MAIL_PROVIDER,
@@ -57,6 +59,37 @@ const TWO_FACTOR_MAX_ATTEMPTS = 5; // failed 2FA codes before the ticket is burn
  */
 const DUMMY_PASSWORD_HASH = argon2.hash(randomBytes(32).toString('hex'));
 
+/**
+ * Stored reason -> the reason as the browser is allowed to hear it.
+ *
+ * Two enums on purpose. The column is forensic and records every ending,
+ * including `ROTATED` — the ordinary, invisible replacement of a token by its
+ * successor, which happens every few minutes and means nothing to the person
+ * using the app. It is absent from this map so it can never be translated and
+ * shown; anything that falls off the map simply says nothing.
+ */
+const WIRE_REASON: Partial<Record<SessionEndReason, SessionEndedReason>> = {
+  LOGOUT: 'logout',
+  REUSE_DETECTED: 'reuse-detected',
+  SIGNED_IN_ELSEWHERE: 'signed-in-elsewhere',
+};
+
+/**
+ * A 401 that also says WHY the session is gone.
+ *
+ * The message stays the same terse 'Invalid session' it has always been — the
+ * explanation rides in a separate, closed field, so nothing about which token
+ * existed or when it died leaks into free text.
+ */
+function sessionEnded(reason: SessionEndedReason): UnauthorizedException {
+  return new UnauthorizedException({
+    statusCode: HttpStatus.UNAUTHORIZED,
+    error: 'Unauthorized',
+    message: 'Invalid session',
+    sessionEnded: reason,
+  });
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -81,37 +114,19 @@ export class AuthService {
     });
   }
 
-  // --- registration & e-mail verification -------------------------------
+  // --- e-mail verification ----------------------------------------------
 
-  async register(input: RegisterInput, ctx: RequestContext): Promise<UserDto> {
-    const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
-    if (existing) {
-      // Registration legitimately reveals a taken e-mail (UX > the marginal
-      // enumeration risk, which forgot-password already mitigates).
-      throw new ConflictException('An account with this email already exists');
-    }
-
-    const passwordHash = await argon2.hash(input.password);
-    const user = await this.prisma.user.create({
-      data: { email: input.email, passwordHash, name: input.name },
-    });
-
-    await this.sendVerificationCode(user.id, user.email, user.name, ctx.locale ?? 'pt-BR');
-    await this.audit('auth.register', user.id, ctx, { email: user.email });
-
-    return toUserDto(user);
-  }
-
-  private async sendVerificationCode(
+  /** Public so SignupService reuses the same verification path. */
+  async sendVerificationCode(
     userId: string,
     email: string,
     name: string,
     locale: EmailLocale,
   ): Promise<void> {
     // One active code per user.
-    await this.prisma.emailVerificationToken.deleteMany({ where: { userId } });
+    await this.prisma.db.emailVerificationToken.deleteMany({ where: { userId } });
     const code = generateNumericCode(6);
-    await this.prisma.emailVerificationToken.create({
+    await this.prisma.db.emailVerificationToken.create({
       data: {
         userId,
         tokenHash: sha256(code),
@@ -136,18 +151,18 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired code');
     };
 
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.db.user.findUnique({ where: { email } });
     if (!user || user.deletedAt) return invalid();
     if (user.emailVerified) return { message: "Already verified. Don't Panic." };
 
     const attemptsKey = this.verifyAttemptsKey(email);
     const attempts = Number((await this.cache.get(attemptsKey)) ?? '0');
     if (attempts >= EMAIL_VERIFY_MAX_ATTEMPTS) {
-      await this.prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } });
+      await this.prisma.db.emailVerificationToken.deleteMany({ where: { userId: user.id } });
       throw new BadRequestException('Too many attempts — request a new code');
     }
 
-    const record = await this.prisma.emailVerificationToken.findFirst({
+    const record = await this.prisma.db.emailVerificationToken.findFirst({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
     });
@@ -161,13 +176,15 @@ export class AuthService {
       return invalid();
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } }),
-      this.prisma.emailVerificationToken.update({
+    // One transaction: an account marked verified whose code is still live, or
+    // a burnt code on an unverified account, are both states nobody can repair.
+    await this.prisma.atomic(async (tx) => {
+      await tx.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+      await tx.emailVerificationToken.update({
         where: { id: record.id },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+    });
     await this.cache.del(attemptsKey);
     await this.audit('auth.email_verified', user.id, ctx, {});
 
@@ -181,7 +198,7 @@ export class AuthService {
     const cooldownKey = `email-verify:resend:${email}`;
     if (await this.cache.get(cooldownKey)) return generic;
 
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.db.user.findUnique({ where: { email } });
     if (user && !user.deletedAt && !user.emailVerified) {
       await this.cache.set(cooldownKey, '1', EMAIL_RESEND_COOLDOWN);
       await this.sendVerificationCode(user.id, user.email, user.name, ctx.locale ?? 'pt-BR');
@@ -203,7 +220,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { email: input.email } });
+    const user = await this.prisma.db.user.findUnique({ where: { email: input.email } });
 
     // Account-column lockout (survives cache flush; per-user, not per-attempt-bucket).
     if (user?.lockedUntil && user.lockedUntil > new Date()) {
@@ -229,7 +246,7 @@ export class AuthService {
     // Success — clear counters.
     await this.cache.del(lockKey);
     if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-      await this.prisma.user.update({
+      await this.prisma.db.user.update({
         where: { id: user.id },
         data: { failedLoginAttempts: 0, lockedUntil: null },
       });
@@ -242,11 +259,29 @@ export class AuthService {
     }
 
     const tokens = await this.tokenService.issueTokensForUser(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
       ctx,
     );
     await this.audit('auth.login', user.id, ctx);
     return { kind: 'tokens', user: toUserDto(user), tokens };
+  }
+
+  /**
+   * Runs a write that has to SURVIVE the rejection that follows it.
+   *
+   * The whole request runs inside one transaction, so throwing rolls it back —
+   * and that would quietly undo exactly the bookkeeping a rejection exists for:
+   * the failed-attempt counter, the account lock, the revoked token family. An
+   * attacker could then guess passwords for ever, because every wrong guess
+   * would erase its own evidence. So these writes get a transaction of their
+   * own, committed before we refuse.
+   *
+   * Legal only while the request transaction has not written the rows involved:
+   * two transactions touching the same row would wait on each other and the
+   * request would hang instead of failing.
+   */
+  private async durably(fn: () => Promise<void>): Promise<void> {
+    await this.prisma.asSystem(fn);
   }
 
   private async registerFailedAttempt(
@@ -258,16 +293,18 @@ export class AuthService {
     await this.cache.incr(lockKey, lockDuration);
     if (!userId) return;
     // Mirror the failure onto the user row; lock the account once over the limit.
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { failedLoginAttempts: { increment: 1 } },
-    });
-    if (updated.failedLoginAttempts >= maxAttempts) {
-      await this.prisma.user.update({
+    await this.durably(async () => {
+      const updated = await this.prisma.db.user.update({
         where: { id: userId },
-        data: { lockedUntil: new Date(Date.now() + lockDuration * 1000) },
+        data: { failedLoginAttempts: { increment: 1 } },
       });
-    }
+      if (updated.failedLoginAttempts >= maxAttempts) {
+        await this.prisma.db.user.update({
+          where: { id: userId },
+          data: { lockedUntil: new Date(Date.now() + lockDuration * 1000) },
+        });
+      }
+    });
   }
 
   // --- 2FA second step ---------------------------------------------------
@@ -296,7 +333,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired 2FA challenge');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.db.user.findUnique({ where: { id: userId } });
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
       throw new UnauthorizedException('Invalid or expired 2FA challenge');
     }
@@ -315,7 +352,7 @@ export class AuthService {
         await this.cache.del(this.twoFactorFailKey(ticket));
         // Mirror onto the account lockout exactly like password failures.
         const lockDuration = this.config.get('LOGIN_LOCK_DURATION', { infer: true });
-        await this.prisma.user.update({
+        await this.prisma.db.user.update({
           where: { id: user.id },
           data: { lockedUntil: new Date(Date.now() + lockDuration * 1000) },
         });
@@ -329,7 +366,7 @@ export class AuthService {
     await this.cache.del(this.twoFactorFailKey(ticket));
 
     const tokens = await this.tokenService.issueTokensForUser(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
       ctx,
     );
     await this.audit('auth.login.2fa', user.id, ctx, {
@@ -345,7 +382,7 @@ export class AuthService {
     ctx: RequestContext,
   ): Promise<{ user: UserDto; tokens: IssuedTokens }> {
     const tokenHash = sha256(rawRefreshToken);
-    const record = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
+    const record = await this.prisma.db.refreshToken.findUnique({ where: { tokenHash } });
     if (!record) {
       throw new UnauthorizedException('Invalid session');
     }
@@ -361,10 +398,13 @@ export class AuthService {
     }
 
     if (record.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid session');
+      // Nothing went wrong here: sessions are meant to end. Saying so is what
+      // stops an ordinary expiry from looking like a bug to the person who just
+      // got bounced to the login screen.
+      throw sessionEnded('expired');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: record.userId } });
+    const user = await this.prisma.db.user.findUnique({ where: { id: record.userId } });
     if (!user || user.deletedAt) {
       throw new UnauthorizedException('Invalid session');
     }
@@ -374,7 +414,7 @@ export class AuthService {
     // instant where the row reads as revoked-but-without-a-successor — the state
     // a concurrent request could not tell apart from theft.
     const { tokens, refreshTokenId } = await this.tokenService.issueTokensInFamily(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
       record.familyId,
       ctx,
     );
@@ -390,14 +430,14 @@ export class AuthService {
     // row is one guarded conditional write whose row-count tells us whether we
     // won. Two concurrent refreshes of the SAME token race here: exactly one
     // updates 1 row, the loser updates 0 — closing the TOCTOU replay hole.
-    const claimed = await this.prisma.refreshToken.updateMany({
+    const claimed = await this.prisma.db.refreshToken.updateMany({
       where: { id: record.id, revokedAt: null, replacedById: null },
-      data: { revokedAt: new Date(), replacedById: refreshTokenId },
+      data: { revokedAt: new Date(), revokedReason: 'ROTATED', replacedById: refreshTokenId },
     });
     if (claimed.count === 0) {
       // We lost the race. Re-read the row: if the winner rotated it just now and
       // the family is still alive, this is concurrency, not theft.
-      const current = await this.prisma.refreshToken.findUnique({ where: { id: record.id } });
+      const current = await this.prisma.db.refreshToken.findUnique({ where: { id: record.id } });
       if (current && (await this.isConcurrentRotation(current, refreshTokenId))) {
         await this.audit('auth.refresh.concurrent', user.id, ctx, { familyId: record.familyId });
         return { user: toUserDto(user), tokens };
@@ -412,15 +452,23 @@ export class AuthService {
 
   /** Detected theft: kill the whole lineage and refuse. Never returns. */
   private async rejectAsReuse(
-    record: { familyId: string; userId: string },
+    record: { familyId: string; userId: string; revokedReason?: SessionEndReason | null },
     ctx: RequestContext,
   ): Promise<never> {
-    await this.tokenService.revokeFamily(record.familyId);
-    this.logger.warn(`Refresh token reuse detected for family ${record.familyId}; family revoked`);
-    await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
-      familyId: record.familyId,
+    await this.durably(async () => {
+      await this.tokenService.revokeFamily(record.familyId, 'REUSE_DETECTED');
+      await this.audit('auth.refresh.reuse_detected', record.userId, ctx, {
+        familyId: record.familyId,
+      });
     });
-    throw new UnauthorizedException('Invalid session');
+    this.logger.warn(`Refresh token reuse detected for family ${record.familyId}; family revoked`);
+    // The family dies either way — replaying a dead token is how a stolen one
+    // behaves. But what the USER is told depends on how this token died: a tab
+    // that slept through its owner's own logout is not a theft, and crying
+    // theft there teaches people to ignore the one warning that matters.
+    // `ROTATED` and an unrevoked row both fall through to the honest answer.
+    const known = record.revokedReason ? WIRE_REASON[record.revokedReason] : undefined;
+    throw sessionEnded(known ?? 'reuse-detected');
   }
 
   /**
@@ -445,7 +493,7 @@ export class AuthService {
     const graceMs = this.config.get('REFRESH_REUSE_GRACE', { infer: true }) * 1000;
     if (Date.now() - record.revokedAt.getTime() > graceMs) return false;
 
-    const alive = await this.prisma.refreshToken.count({
+    const alive = await this.prisma.db.refreshToken.count({
       where: {
         familyId: record.familyId,
         revokedAt: null,
@@ -460,11 +508,11 @@ export class AuthService {
 
   async logout(rawRefreshToken: string | undefined, ctx: RequestContext): Promise<void> {
     if (!rawRefreshToken) return;
-    const record = await this.prisma.refreshToken.findUnique({
+    const record = await this.prisma.db.refreshToken.findUnique({
       where: { tokenHash: sha256(rawRefreshToken) },
     });
     if (record && !record.revokedAt) {
-      await this.tokenService.revokeToken(record.id);
+      await this.tokenService.revokeToken(record.id, 'LOGOUT');
       await this.audit('auth.logout', record.userId, ctx);
     }
   }
@@ -472,13 +520,13 @@ export class AuthService {
   // --- forgot / reset password ------------------------------------------
 
   async forgotPassword(input: ForgotPasswordInput, ctx: RequestContext): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { email: input.email } });
+    const user = await this.prisma.db.user.findUnique({ where: { email: input.email } });
     // Always return 200 to the caller; only send mail if the account exists.
     // Never reveal whether the email is registered.
     if (!user || user.deletedAt) return;
 
     const raw = generateRawToken();
-    await this.prisma.passwordResetToken.create({
+    await this.prisma.db.passwordResetToken.create({
       data: {
         userId: user.id,
         tokenHash: sha256(raw),
@@ -500,25 +548,30 @@ export class AuthService {
     ctx: RequestContext,
   ): Promise<{ message: string }> {
     const tokenHash = sha256(input.token);
-    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+    const record = await this.prisma.db.passwordResetToken.findUnique({ where: { tokenHash } });
     if (!record || record.usedAt || record.expiresAt < new Date()) {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
     const passwordHash = await argon2.hash(input.password);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    // One transaction: a new password with the reset token still usable would
+    // leave the account open to a second reset by whoever else holds the link.
+    await this.prisma.atomic(async (tx) => {
+      await tx.user.update({
         where: { id: record.userId },
         data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
-      }),
-      this.prisma.passwordResetToken.update({
+      });
+      await tx.passwordResetToken.update({
         where: { id: record.id },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+    });
 
     // Invalidate every existing session — a reset means "lock everyone else out".
-    await this.tokenService.revokeAllForUser(record.userId);
+    // Recorded as LOGOUT: the account's owner deliberately ended those sessions.
+    // There is no dedicated reason for a password change, and inventing one here
+    // would mean a DB enum value the wire contract cannot express.
+    await this.tokenService.revokeAllForUser(record.userId, 'LOGOUT');
     await this.audit('auth.reset_password', record.userId, ctx);
 
     return { message: "Password updated. Don't Panic — you can log in now." };
@@ -526,16 +579,33 @@ export class AuthService {
 
   // --- audit -------------------------------------------------------------
 
-  private async audit(
+  /** Public so SignupService writes through the same audit path. */
+  async audit(
     action: string,
     userId: string | null,
     ctx: RequestContext,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    // The audit row has to satisfy the SAME RLS check as the request that
+    // produced it. Written without a tenant while the request runs in tenant
+    // scope, Postgres refuses it — and a refused statement aborts the whole
+    // transaction, taking the operation being audited down with it. Swallowing
+    // the error below would hide that, not undo it.
+    //
+    // In system scope (the whole authentication surface) there is no tenant to
+    // read off the scope, so we resolve it from the user instead — otherwise a
+    // company could never see its own sign-ins, which is precisely the part of
+    // an audit trail a customer asks for. One indexed lookup, on a path that
+    // runs once per authentication, and RLS permits the write because system
+    // scope is allowed to address any tenant.
+    const scope = TenantContext.get()?.scope;
+    const tenantId =
+      scope?.kind === 'tenant' ? scope.tenantId : ((await this.tenantOf(userId)) ?? null);
     try {
-      await this.prisma.auditLog.create({
+      await this.prisma.db.auditLog.create({
         data: {
           action,
+          tenantId,
           userId,
           ip: ctx.ip ?? null,
           userAgent: ctx.userAgent ?? null,
@@ -546,6 +616,16 @@ export class AuthService {
       // Audit must never break the request path.
       this.logger.warn(`Failed to write audit log "${action}": ${String(err)}`);
     }
+  }
+
+  /** The user's company, or null when there is no user or no company. */
+  private async tenantOf(userId: string | null): Promise<string | null> {
+    if (!userId) return null;
+    const row = await this.prisma.db.user.findUnique({
+      where: { id: userId },
+      select: { tenantId: true },
+    });
+    return row?.tenantId ?? null;
   }
 
   // exposed for clarity / potential reuse

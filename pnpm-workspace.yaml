@@ -2,6 +2,19 @@ packages:
   - 'apps/*'
   - 'packages/*'
 overrides:
+  # One fastify per install. With two copies, @fastify/* plugins augment a
+  # different FastifyInstance than the app sees, and declaration merging yields
+  # nominally distinct types that fail the build. Not a downgrade — a dedupe.
+  fastify: '^5.12.3'
+  # Both arrive under the Prisma CLI, which pins older copies than the
+  # advisories require. Prisma only touches them for MySQL introspection and
+  # config merging — neither is on our Postgres runtime path — but the audit
+  # gate is a floor, not a judgement call, so force the patched releases.
+  # deepmerge-ts: stack exhaustion on recursive objects (GHSA-ggr8-5vv4-36mx).
+  # mysql2: auth-plugin downgrade leaking plaintext credentials
+  # (GHSA-3f6p-5ww8-9rcr) + GHSA for <=3.23.0.
+  deepmerge-ts: '>=8.0.0'
+  mysql2: '>=3.23.1'
   # esbuild < 0.28.1 has a HIGH advisory (GHSA-gv7w-rqvm-qjhr: missing binary
   # integrity check → RCE via NPM_CONFIG_REGISTRY). Pulled transitively
   # (Storybook/Vite/tsup), so force every copy to the patched release.
@@ -15,9 +28,11 @@ allowBuilds:
   argon2: true
   core-js-pure: false
   esbuild: true
+  msgpackr-extract: false
   prisma: true
   sharp: true
   unrs-resolver: true
+  workerd: false
 minimumReleaseAgeExclude:
   - '@aws-sdk/client-s3@3.1068.0'
   - '@aws-sdk/client-ses@3.1068.0'

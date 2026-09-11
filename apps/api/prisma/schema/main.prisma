@@ -1,0 +1,23 @@
+// DontPanic — data model. Don't Panic, it's just tables.
+//
+// The schema is split by domain across this folder (Prisma schema folder).
+// Conventions that hold in every file:
+//
+//  - Model and field names in English; table and column names in snake_case
+//    via @@map/@map.
+//  - Every model that belongs to a tenant carries `tenantId` + a `tenant`
+//    relation with `onDelete: Cascade`, an `@@index([tenantId])`, and is
+//    protected by Row Level Security in Postgres (see the *_row_level_security
+//    migration). `tenantId` is NEVER accepted from the client: it comes from the
+//    JWT, through TenantContext.
+//  - `deletedAt` for soft delete on anything holding personal data or money.
+//  - Open-ended data goes in a `Json` column (`metadata`, `features`, `limits`)
+//    rather than a migration per setting.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

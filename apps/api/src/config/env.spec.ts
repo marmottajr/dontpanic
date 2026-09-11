@@ -1,4 +1,4 @@
-import { validateEnv } from './env';
+import { parseTrustProxy, validateEnv } from './env';
 
 /** A minimal config that satisfies all required fields. */
 function baseConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -76,6 +76,69 @@ describe('validateEnv', () => {
 
     it("coerces an arbitrary string (not 'true'/'1') to false", () => {
       expect(validateEnv(baseConfig({ COOKIE_SECURE: 'yes' })).COOKIE_SECURE).toBe(false);
+    });
+  });
+
+  describe('captcha', () => {
+    it('defaults to the off driver, so a fresh clone boots with no keys', () => {
+      expect(validateEnv(baseConfig()).CAPTCHA_DRIVER).toBe('none');
+    });
+
+    it('refuses a driver without a secret instead of silently letting bots in', () => {
+      expect(() => validateEnv(baseConfig({ CAPTCHA_DRIVER: 'turnstile' }))).toThrow(
+        /CAPTCHA_SECRET_KEY/,
+      );
+    });
+
+    it('accepts a driver with a secret', () => {
+      const env = validateEnv(
+        baseConfig({ CAPTCHA_DRIVER: 'recaptcha-v3', CAPTCHA_SECRET_KEY: 's3cr3t' }),
+      );
+      expect(env.CAPTCHA_DRIVER).toBe('recaptcha-v3');
+      expect(env.CAPTCHA_MIN_SCORE).toBe(0.5);
+    });
+
+    it('rejects an unknown driver', () => {
+      expect(() => validateEnv(baseConfig({ CAPTCHA_DRIVER: 'hcaptcha' }))).toThrow(
+        /CAPTCHA_DRIVER/,
+      );
+    });
+
+    it('rejects a score outside 0..1', () => {
+      expect(() => validateEnv(baseConfig({ CAPTCHA_MIN_SCORE: '1.5' }))).toThrow(
+        /CAPTCHA_MIN_SCORE/,
+      );
+    });
+  });
+
+  describe('parseTrustProxy', () => {
+    it('defaults to loopback — the BFF on the same host, nobody else', () => {
+      expect(parseTrustProxy(undefined)).toBe('loopback');
+      expect(validateEnv(baseConfig()).TRUST_PROXY).toBe('loopback');
+    });
+
+    it('reads an explicit boolean', () => {
+      expect(parseTrustProxy('true')).toBe(true);
+      expect(parseTrustProxy('false')).toBe(false);
+    });
+
+    it('treats an empty value as "trust nothing" rather than "trust everything"', () => {
+      expect(parseTrustProxy('')).toBe(false);
+      expect(parseTrustProxy('   ')).toBe(false);
+    });
+
+    it('turns a hop count into a predicate over the hops nearest the socket', () => {
+      const trust = parseTrustProxy('2');
+      expect(typeof trust).toBe('function');
+      const fn = trust as (address: string, hop: number) => boolean;
+      expect(fn('10.0.0.1', 0)).toBe(true);
+      expect(fn('10.0.0.1', 1)).toBe(true);
+      expect(fn('10.0.0.1', 2)).toBe(false);
+    });
+
+    it('passes a CIDR list through for fastify to match', () => {
+      expect(parseTrustProxy('10.0.0.0/8,::1')).toBe('10.0.0.0/8,::1');
+      expect(parseTrustProxy(' uniquelocal ')).toBe('uniquelocal');
     });
   });
 });

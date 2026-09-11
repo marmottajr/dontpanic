@@ -1,4 +1,8 @@
-import type { ApiErrorBody } from '@dontpanic/shared';
+import {
+  sessionEndReasonSchema,
+  type ApiErrorBody,
+  type SessionEndedReason,
+} from '@dontpanic/shared';
 
 /**
  * Browser-side API client. Talks ONLY to the same-origin BFF proxy
@@ -22,10 +26,76 @@ async function getCsrf(): Promise<string> {
  * Send the browser to /login, remembering where it was (same `from` key the
  * Next proxy uses). Browser-only, like the rest of this module.
  */
-function redirectToLogin(): void {
+export function redirectToLogin(): void {
   const { pathname, search } = window.location;
   if (pathname === '/login') return;
   window.location.assign(`/login?from=${encodeURIComponent(`${pathname}${search}`)}`);
+}
+
+/**
+ * A listener notified once, when the session is definitively over.
+ *
+ * Returning `true` means "I am telling the user about this myself" — the client
+ * then leaves the browser where it is instead of bouncing to /login, so whatever
+ * the listener rendered (the session-ended dialog) stays on screen long enough
+ * to be read. Returning nothing lets the default redirect happen.
+ */
+export type SessionEndedListener = (reason: SessionEndedReason) => boolean | void;
+
+const sessionEndedListeners = new Set<SessionEndedListener>();
+
+/** Subscribe to the end of the session. Returns the unsubscribe function. */
+export function onSessionEnded(listener: SessionEndedListener): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
+/**
+ * The latch. Once the session is definitively dead, it never comes back in this
+ * document: every later refresh attempt is pointless, and firing them means a
+ * dead tab quietly hammering the backend with a revoked cookie.
+ */
+let sessionOver = false;
+
+/**
+ * End the session exactly once: trip the latch, drop the CSRF token (it belongs
+ * to a session that no longer exists), tell whoever is listening, and only then
+ * fall back to the bare redirect if nobody took ownership of explaining it.
+ */
+function endSession(reason: SessionEndedReason): void {
+  if (sessionOver) return;
+  sessionOver = true;
+  csrfToken = null;
+
+  let handled = false;
+  for (const listener of sessionEndedListeners) {
+    // A listener that throws must never strand the user on a dead screen.
+    try {
+      if (listener(reason) === true) handled = true;
+    } catch {
+      /* ignored on purpose */
+    }
+  }
+
+  if (!handled) redirectToLogin();
+}
+
+/**
+ * Pull the reason out of a 401 body. An absent, malformed or unknown value
+ * degrades to 'expired': the reason drives a translated message, so an
+ * unrecognised string must never reach the screen.
+ */
+async function readSessionEndedReason(res: Response): Promise<SessionEndedReason> {
+  try {
+    const text = await res.text();
+    const body = text ? (JSON.parse(text) as ApiErrorBody) : null;
+    const parsed = sessionEndReasonSchema.safeParse(body?.sessionEnded);
+    return parsed.success ? parsed.data : 'expired';
+  } catch {
+    return 'expired';
+  }
 }
 
 /**
@@ -39,6 +109,10 @@ function redirectToLogin(): void {
 let refreshInFlight: Promise<boolean> | null = null;
 
 function refreshSession(): Promise<boolean> {
+  // The latch: a session that has already ended never renews. Without this a
+  // dead tab keeps retrying forever, one doomed refresh per failed request.
+  if (sessionOver) return Promise.resolve(false);
+
   refreshInFlight ??= (async () => {
     try {
       const res = await fetch('/api/auth/refresh', {
@@ -50,8 +124,7 @@ function refreshSession(): Promise<boolean> {
       // (fetch rejecting) or a 5xx are transient: nobody gets thrown out for
       // losing the wi-fi for a second.
       if (res.status === 401) {
-        csrfToken = null;
-        redirectToLogin();
+        endSession(await readSessionEndedReason(res));
       }
       return res.ok;
     } catch {

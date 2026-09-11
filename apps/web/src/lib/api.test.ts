@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { api as apiType, apiUpload as apiUploadType, ApiError as ApiErrorType } from './api';
+import type {
+  api as apiType,
+  apiUpload as apiUploadType,
+  ApiError as ApiErrorType,
+  onSessionEnded as onSessionEndedType,
+  redirectToLogin as redirectToLoginType,
+} from './api';
 
 /**
  * Helper to build a minimal Response-like object that the client's
@@ -31,6 +37,8 @@ function stubLocation(pathname = '/dashboard', search = '') {
 let api: typeof apiType;
 let apiUpload: typeof apiUploadType;
 let ApiError: typeof ApiErrorType;
+let onSessionEnded: typeof onSessionEndedType;
+let redirectToLogin: typeof redirectToLoginType;
 
 beforeEach(async () => {
   fetchMock.mockReset();
@@ -42,6 +50,8 @@ beforeEach(async () => {
   api = mod.api;
   apiUpload = mod.apiUpload;
   ApiError = mod.ApiError;
+  onSessionEnded = mod.onSessionEnded;
+  redirectToLogin = mod.redirectToLogin;
 });
 
 afterEach(() => {
@@ -308,5 +318,163 @@ describe('apiUpload()', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(413);
     expect(err.body).toEqual({ message: 'Too large' });
+  });
+});
+
+describe('session end', () => {
+  /** A Response-like whose body is not valid JSON. */
+  function brokenBody(status: number, text: string) {
+    return { status, ok: false, json: async () => null, text: async () => text } as Response;
+  }
+
+  /** GET 401 -> csrf -> refresh 401 carrying `body`. */
+  function deadRefresh(body: unknown) {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }))
+      .mockResolvedValueOnce(jsonResponse(200, { csrfToken: 't' }))
+      .mockResolvedValueOnce(
+        typeof body === 'string' ? brokenBody(401, body) : jsonResponse(401, body),
+      );
+  }
+
+  it('hands listeners the reason carried by the refresh 401', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen);
+    deadRefresh({ message: 'dead', sessionEnded: 'signed-in-elsewhere' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+
+    expect(seen).toHaveBeenCalledExactlyOnceWith('signed-in-elsewhere');
+  });
+
+  it.each(['logout', 'reuse-detected', 'signed-in-elsewhere', 'expired'])(
+    'passes through the known reason %s',
+    async (reason) => {
+      const seen = vi.fn();
+      onSessionEnded(seen);
+      deadRefresh({ sessionEnded: reason });
+
+      await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+      expect(seen).toHaveBeenCalledWith(reason);
+    },
+  );
+
+  it('degrades an unknown reason to "expired" instead of rendering it raw', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen);
+    deadRefresh({ sessionEnded: 'sudden-vogon-poetry' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toHaveBeenCalledWith('expired');
+  });
+
+  it('falls back to "expired" when the 401 body carries no reason', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen);
+    deadRefresh({ message: 'dead' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toHaveBeenCalledWith('expired');
+  });
+
+  it('falls back to "expired" on an empty 401 body', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen);
+    deadRefresh('');
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toHaveBeenCalledWith('expired');
+  });
+
+  it('falls back to "expired" when the 401 body is not JSON', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen);
+    deadRefresh('<html>gateway said no</html>');
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toHaveBeenCalledWith('expired');
+  });
+
+  it('redirects when no listener claims the explanation', async () => {
+    deadRefresh({ sessionEnded: 'expired' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).toHaveBeenCalledWith('/login?from=%2Fdashboard');
+  });
+
+  it('does NOT redirect when a listener returns true (it owns the explanation)', async () => {
+    onSessionEnded(() => true);
+    deadRefresh({ sessionEnded: 'reuse-detected' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it('still redirects when a listener throws', async () => {
+    const after = vi.fn();
+    onSessionEnded(() => {
+      throw new Error('listener blew up');
+    });
+    onSessionEnded(after);
+    deadRefresh({ sessionEnded: 'expired' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    // the broken listener does not stop the next one, nor the fallback redirect
+    expect(after).toHaveBeenCalledWith('expired');
+    expect(assignMock).toHaveBeenCalledWith('/login?from=%2Fdashboard');
+  });
+
+  it('an unsubscribed listener is never called', async () => {
+    const seen = vi.fn();
+    onSessionEnded(seen)();
+    deadRefresh({ sessionEnded: 'expired' });
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('latches: once the session is over no further refresh is ever attempted', async () => {
+    const seen = vi.fn(() => true as const);
+    onSessionEnded(seen);
+    deadRefresh({ sessionEnded: 'expired' });
+    // a later request also 401s
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { message: 'exp' }));
+
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+    await expect(api('/users/me')).rejects.toMatchObject({ status: 401 });
+
+    // exactly one refresh for the whole document's life, and one notification
+    expect(fetchMock.mock.calls.filter(([u]) => u === '/api/auth/refresh')).toHaveLength(1);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it('N concurrent 401s that all die share ONE refresh and ONE notification', async () => {
+    const seen = vi.fn(() => true as const);
+    onSessionEnded(seen);
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/csrf') return jsonResponse(200, { csrfToken: 't' });
+      if (url === '/api/auth/refresh') return jsonResponse(401, { sessionEnded: 'reuse-detected' });
+      return jsonResponse(401, { message: 'exp' });
+    });
+
+    const results = await Promise.allSettled([api('/a'), api('/b'), api('/c'), api('/d')]);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+
+    expect(fetchMock.mock.calls.filter(([u]) => u === '/api/auth/refresh')).toHaveLength(1);
+    expect(seen).toHaveBeenCalledExactlyOnceWith('reuse-detected');
+  });
+});
+
+describe('redirectToLogin()', () => {
+  it('remembers where the user was', () => {
+    stubLocation('/profile', '?tab=security');
+    redirectToLogin();
+    expect(assignMock).toHaveBeenCalledWith('/login?from=%2Fprofile%3Ftab%3Dsecurity');
+  });
+
+  it('never redirects away from /login itself', () => {
+    stubLocation('/login', '');
+    redirectToLogin();
+    expect(assignMock).not.toHaveBeenCalled();
   });
 });

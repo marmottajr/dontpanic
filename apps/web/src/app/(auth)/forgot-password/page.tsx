@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, MailCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@dontpanic/shared';
 import { api } from '@/lib/api';
+import { Captcha, type CaptchaHandle } from '@/components/captcha';
+import { captchaEnabled } from '@/lib/captcha';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,8 +31,10 @@ export default function ForgotPasswordPage() {
   const ta = useTranslations('auth.login');
   const tc = useTranslations('common');
   const tv = useTranslations('validation');
+  const tCaptcha = useTranslations('auth.captcha');
 
   const [sent, setSent] = useState(false);
+  const captchaRef = useRef<CaptchaHandle>(null);
 
   const {
     register,
@@ -46,11 +51,17 @@ export default function ForgotPasswordPage() {
   });
 
   const onSubmit = handleSubmit(async (values) => {
+    const captchaToken = await captchaRef.current?.getToken();
+    if (captchaEnabled && !captchaToken) {
+      toast.error(tCaptcha('required'));
+      return;
+    }
     // The endpoint always returns 200 to avoid leaking which emails exist; even
     // on an unexpected error we show the neutral "sent" state.
     try {
-      await forgot.mutateAsync(values);
+      await forgot.mutateAsync({ ...values, captchaToken: captchaToken ?? undefined });
     } catch {
+      captchaRef.current?.reset();
       /* swallow — never reveal account existence */
     } finally {
       setSent(true);
@@ -98,6 +109,7 @@ export default function ForgotPasswordPage() {
               />
               {errors.email && <p className="text-xs text-destructive">{tv('email')}</p>}
             </div>
+            <Captcha ref={captchaRef} action="forgot-password" />
           </CardContent>
           <CardFooter className="flex-col gap-4">
             <Button type="submit" className="w-full" disabled={isSubmitting}>

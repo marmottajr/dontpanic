@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./locale/br": {
+      "types": "./dist/locale/br.d.ts",
+      "import": "./dist/locale/br.js",
+      "require": "./dist/locale/br.cjs"
     }
   },
   "files": [
@@ -24,13 +29,13 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "@dontpanic/config": "workspace:*",
-    "eslint": "^10.5.0",
+    "eslint": "^10.10.0",
     "tsup": "^8.5.1",
     "typescript": "6.0.3",
-    "vitest": "4.1.8"
+    "vitest": "5.0.0"
   }
 }

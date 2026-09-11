@@ -9,7 +9,8 @@ import { ACCESS_COOKIE } from '../support/cookies';
 /**
  * Global authentication gate. Routes flagged @Public() pass straight through;
  * everything else must carry a valid access_token cookie. On success it attaches
- * `request.user = { id, email, role }` for @CurrentUser() / RolesGuard.
+ * `request.user = { id, email, role, tenantId }` for @CurrentUser(), RolesGuard
+ * and the tenant scope interceptor.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -39,6 +40,7 @@ export class JwtAuthGuard implements CanActivate {
         id: payload.sub,
         email: payload.email,
         role: payload.role,
+        tenantId: payload.tid ?? null,
         fam: payload.fam,
       };
       return true;

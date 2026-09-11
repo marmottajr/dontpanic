@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSearchParams } from 'next/navigation';
@@ -11,6 +11,8 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { resetPasswordSchema, passwordSchema } from '@dontpanic/shared';
 import { api, ApiError } from '@/lib/api';
+import { Captcha, type CaptchaHandle } from '@/components/captcha';
+import { captchaEnabled } from '@/lib/captcha';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +31,7 @@ export default function ResetPasswordPage() {
   const t = useTranslations('auth.reset');
   const ta = useTranslations('auth.login');
   const tErr = useTranslations('errors');
+  const tCaptcha = useTranslations('auth.captcha');
   const tv = useTranslations('validation');
 
   const searchParams = useSearchParams();
@@ -37,6 +40,7 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const captchaRef = useRef<CaptchaHandle>(null);
 
   // Local form schema: enforce the shared password policy AND the confirm match.
   const formSchema = z
@@ -60,13 +64,28 @@ export default function ResetPasswordPage() {
   });
 
   const onSubmit = handleSubmit(async (values) => {
+    const captchaToken = await captchaRef.current?.getToken();
+    if (captchaEnabled && !captchaToken) {
+      toast.error(tCaptcha('required'));
+      return;
+    }
     setSubmitting(true);
     try {
-      const payload = resetPasswordSchema.parse({ token, password: values.password });
+      const payload = resetPasswordSchema.parse({
+        token,
+        password: values.password,
+        captchaToken: captchaToken ?? undefined,
+      });
       await api('/auth/reset-password', { method: 'POST', body: payload });
       setDone(true);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 400 || err.status === 404 || err.status === 410)) {
+      captchaRef.current?.reset();
+      if (err instanceof ApiError && err.status === 400 && err.body?.error === 'CaptchaRequired') {
+        toast.error(tCaptcha('failed'));
+      } else if (
+        err instanceof ApiError &&
+        (err.status === 400 || err.status === 404 || err.status === 410)
+      ) {
         toast.error(t('invalidToken'));
       } else if (err instanceof z.ZodError) {
         toast.error(t('invalidToken'));
@@ -172,10 +191,9 @@ export default function ResetPasswordPage() {
               aria-invalid={!!errors.confirmPassword}
               {...register('confirmPassword')}
             />
-            {errors.confirmPassword && (
-              <p className="text-xs text-destructive">{t('mismatch')}</p>
-            )}
+            {errors.confirmPassword && <p className="text-xs text-destructive">{t('mismatch')}</p>}
           </div>
+          <Captcha ref={captchaRef} action="reset-password" />
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={isSubmitting || submitting}>

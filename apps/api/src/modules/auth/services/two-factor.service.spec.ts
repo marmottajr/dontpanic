@@ -1,5 +1,6 @@
 import { generate, generateSecret } from 'otplib';
 import * as argon2 from 'argon2';
+import { makePrismaMock, type PrismaMock } from '../../../../test/prisma-mock';
 import { TwoFactorService } from './two-factor.service';
 
 // Mock only the QR rendering (binary/encoding heavy); keep real TOTP + argon2.
@@ -19,8 +20,7 @@ function makeConfig() {
 jest.setTimeout(30_000);
 
 describe('TwoFactorService', () => {
-  let prisma: {
-    $transaction: jest.Mock;
+  let prisma: PrismaMock & {
     twoFactorBackupCode: {
       deleteMany: jest.Mock;
       createMany: jest.Mock;
@@ -31,15 +31,14 @@ describe('TwoFactorService', () => {
   let service: TwoFactorService;
 
   beforeEach(() => {
-    prisma = {
-      $transaction: jest.fn().mockResolvedValue([]),
+    prisma = makePrismaMock({
       twoFactorBackupCode: {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
       },
-    };
+    });
     service = new TwoFactorService(makeConfig(), prisma as never);
   });
 
@@ -90,7 +89,7 @@ describe('TwoFactorService', () => {
   describe('replaceBackupCodes', () => {
     it('wipes old codes then inserts the new hashes in one transaction', async () => {
       await service.replaceBackupCodes('u1', ['h1', 'h2']);
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
       expect(prisma.twoFactorBackupCode.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'u1' },
       });

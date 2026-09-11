@@ -6,9 +6,10 @@ test('login page renders the credentials form', async ({ page }) => {
   await expect(page.getByRole('button', { name: /entrar|sign in/i })).toBeVisible();
 });
 
-test('register page renders', async ({ page }) => {
-  await page.goto('/register');
-  await expect(page).toHaveURL(/\/register/);
+test('signup page renders the company registration form', async ({ page }) => {
+  await page.goto('/signup');
+  await expect(page).toHaveURL(/\/signup/);
+  await expect(page.getByRole('textbox', { name: /empresa|company name/i })).toBeVisible();
   await expect(page.getByRole('textbox', { name: /e-?mail/i })).toBeVisible();
 });
 

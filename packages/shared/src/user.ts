@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { passwordSchema } from './primitives';
 
-export const RoleEnum = z.enum(['ADMIN', 'USER']);
+/**
+ * Platform-level role. SUPERADMIN is the SaaS operator: it belongs to no tenant
+ * and is the only role that reaches /admin. ADMIN and USER live inside a
+ * tenant; fine-grained access is decided by the profile permissions.
+ */
+export const RoleEnum = z.enum(['SUPERADMIN', 'ADMIN', 'USER']);
 export type Role = z.infer<typeof RoleEnum>;
 
 /** Public user shape returned to clients — never includes secrets. */
