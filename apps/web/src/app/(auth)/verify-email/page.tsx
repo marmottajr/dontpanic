@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CheckCircle2, Loader2, MailCheck } from 'lucide-react';
 import { api } from '@/lib/api';
+import { Captcha, type CaptchaHandle } from '@/components/captcha';
+import { captchaEnabled } from '@/lib/captcha';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +27,7 @@ const RESEND_COOLDOWN = 60;
 
 export default function VerifyEmailPage() {
   const t = useTranslations('auth.verify');
+  const tCaptcha = useTranslations('auth.captcha');
   const router = useRouter();
   const email = useSearchParams().get('email') ?? '';
 
@@ -33,6 +36,7 @@ export default function VerifyEmailPage() {
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const captchaRef = useRef<CaptchaHandle>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -59,11 +63,20 @@ export default function VerifyEmailPage() {
 
   async function resend() {
     if (cooldown > 0) return;
+    const captchaToken = await captchaRef.current?.getToken();
+    if (captchaEnabled && !captchaToken) {
+      toast.error(tCaptcha('required'));
+      return;
+    }
     setCooldown(RESEND_COOLDOWN);
     try {
-      await api('/auth/resend-verification', { method: 'POST', body: { email } });
+      await api('/auth/resend-verification', {
+        method: 'POST',
+        body: { email, captchaToken: captchaToken ?? undefined },
+      });
       toast.success(t('resent'));
     } catch {
+      captchaRef.current?.reset();
       toast.error(t('error'));
     }
   }
@@ -82,7 +95,7 @@ export default function VerifyEmailPage() {
         </CardContent>
         <CardFooter>
           <Button asChild variant="outline" className="w-full">
-            <Link href="/register">{t('goToLogin')}</Link>
+            <Link href="/signup">{t('goToLogin')}</Link>
           </Button>
         </CardFooter>
       </Card>
@@ -133,6 +146,11 @@ export default function VerifyEmailPage() {
             >
               {cooldown > 0 ? t('resendCooldown', { seconds: cooldown }) : t('resend')}
             </button>
+            <Captcha
+              ref={captchaRef}
+              action="resend-verification"
+              className="flex justify-center"
+            />
           </>
         )}
       </CardContent>

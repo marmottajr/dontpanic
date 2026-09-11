@@ -19,3 +19,13 @@ export const passwordSchema = z
   .regex(/[a-z]/)
   .regex(/[A-Z]/)
   .regex(/[0-9]/);
+
+/**
+ * Boolean coming from a query string.
+ *
+ * `z.coerce.boolean()` is wrong here: it applies `Boolean(value)`, and
+ * `Boolean("false") === true` — so `?active=false` would silently return the
+ * ACTIVE records, the exact opposite of what was asked. This schema accepts
+ * only the two literal strings and converts by hand.
+ */
+export const booleanQueryParam = z.enum(['true', 'false']).transform((value) => value === 'true');

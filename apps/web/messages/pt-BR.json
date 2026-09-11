@@ -40,13 +40,23 @@
       "invalid": "E-mail ou senha incorretos.",
       "locked": "Conta temporariamente bloqueada. Tente novamente mais tarde."
     },
-    "register": {
-      "title": "Crie sua conta",
+    "signup": {
+      "title": "Crie sua empresa",
       "subtitle": "Comece em segundos. Não entre em pânico.",
-      "submit": "Criar conta",
+      "companyLegend": "A empresa",
+      "adminLegend": "Seu acesso de administrador",
+      "companyName": "Nome da empresa",
+      "companyNamePlaceholder": "Sirius Cybernetics",
+      "slug": "Endereço da empresa",
+      "slugHint": "Só letras minúsculas, números e hífens. É como sua empresa aparece nos links.",
+      "slugTaken": "Esse endereço já está em uso. Escolha outro.",
+      "emailTaken": "Já existe uma conta com esse e-mail.",
+      "acceptTerms": "Li e aceito os termos de uso e a política de privacidade.",
+      "acceptTermsRequired": "Você precisa aceitar os termos para continuar.",
+      "submit": "Criar empresa",
       "hasAccount": "Já tem conta?",
       "signin": "Entrar",
-      "success": "Conta criada! Verifique seu e-mail para confirmar."
+      "success": "Empresa criada! Verifique seu e-mail para confirmar."
     },
     "forgot": {
       "title": "Recuperar senha",
@@ -77,6 +87,11 @@
       "resendCooldown": "Reenviar em {seconds}s",
       "noEmail": "Endereço de e-mail ausente. Faça o cadastro novamente.",
       "goToLogin": "Ir para o login"
+    },
+    "captcha": {
+      "required": "Confirme que você não é um robô para continuar.",
+      "failed": "Não conseguimos validar o desafio. Tente de novo.",
+      "unavailable": "Verificação indisponível no momento. Tente em instantes."
     }
   },
   "dashboard": {
@@ -94,6 +109,12 @@
         "title": "Tudo plugável",
         "body": "Banco, storage e e-mail trocáveis por uma variável."
       }
+    },
+    "variation": {
+      "up": "+{value}",
+      "down": "−{value}",
+      "flat": "{value}",
+      "vsPrevious": "vs. mês anterior"
     }
   },
   "profile": {
@@ -194,6 +215,23 @@
       "created": "Usuário criado."
     }
   },
+  "session": {
+    "signInAgain": "Entrar novamente",
+    "changePassword": "Alterar senha",
+    "advice": "Se não foi você, altere sua senha agora: outra pessoa pode saber qual é.",
+    "expired": {
+      "title": "Sua sessão expirou",
+      "description": "Ficou tempo demais sem atividade e, por segurança, encerramos a sessão. Entre novamente para continuar de onde parou."
+    },
+    "signed-in-elsewhere": {
+      "title": "Você entrou em outro dispositivo",
+      "description": "Alguém entrou nesta conta em outro dispositivo, e esta sessão foi encerrada."
+    },
+    "reuse-detected": {
+      "title": "Encerramos sua sessão por segurança",
+      "description": "Detectamos um uso suspeito das credenciais desta sessão e encerramos todas as sessões da conta por precaução."
+    }
+  },
   "errors": {
     "notFound": {
       "title": "Página não encontrada",
@@ -245,5 +283,173 @@
     "tooShort": "Curto demais (mín. {min})",
     "tooLong": "Longo demais (máx. {max})",
     "invalid": "Valor inválido"
+  },
+  "tenant": {
+    "blocked": {
+      "title": "Acesso bloqueado",
+      "body": "A sua empresa está com o acesso suspenso. Enquanto isso, nenhuma tela do sistema fica disponível — nem para leitura.",
+      "contact": "Se você acredita que isso é um engano, fale com o suporte informando o nome da sua empresa."
+    },
+    "trial": {
+      "daysLeft": "Avaliação: {days, plural, one {falta # dia} other {faltam # dias}}.",
+      "endsToday": "A sua avaliação termina hoje.",
+      "hint": "Depois disso o acesso fica bloqueado até a contratação de um plano.",
+      "seePlan": "Ver plano"
+    },
+    "construction": {
+      "title": "Módulo em construção",
+      "body": "Esta parte do sistema ainda não existe. Preferimos uma tela honesta a preencher a página com números inventados — dado fictício ensina a desconfiar de todos os outros.",
+      "back": "Voltar ao painel"
+    }
+  },
+  "legal": {
+    "document": {
+      "versionLine": "Versão {version} · em vigor desde {date}",
+      "summaryTitle": "Em resumo",
+      "summaryDisclaimer": "Este resumo existe para ajudar a leitura e não substitui o texto abaixo, que é o que vale.",
+      "tocTitle": "Índice",
+      "highlightNotice": "Cláusula que limita direitos ou responsabilidade — destacada como manda o art. 54, §4º do Código de Defesa do Consumidor."
+    },
+    "page": {
+      "home": "Início",
+      "back": "Voltar ao site",
+      "incompleteTitle": "Documento por concluir.",
+      "incompleteBody": "Os dados de identificação da empresa ainda não foram preenchidos (procure por ⚠ no texto). Sem eles este documento não identifica quem se obriga e não deve ser publicado.",
+      "governingLaw": "Documento regido pela lei brasileira. A versão em português é a que vale.",
+      "termsLink": "Termos de Uso",
+      "privacyLink": "Política de Privacidade"
+    }
+  },
+  "platform": {
+    "badge": "Plataforma",
+    "navLabel": "Navegação da plataforma",
+    "footer": "Painel da plataforma · acesso restrito",
+    "nav": {
+      "overview": "Visão geral",
+      "tenants": "Empresas",
+      "plans": "Planos"
+    },
+    "status": {
+      "TRIAL": "Avaliação",
+      "ACTIVE": "Ativa",
+      "SUSPENDED": "Suspensa",
+      "CANCELED": "Cancelada"
+    },
+    "overview": {
+      "title": "Visão geral",
+      "subtitle": "Os números da plataforma inteira.",
+      "companiesTitle": "Empresas",
+      "tenantsTotal": "Total",
+      "trial": "Em avaliação",
+      "active": "Ativas",
+      "suspended": "Suspensas",
+      "canceled": "Canceladas",
+      "usersTotal": "Usuários",
+      "chartTitle": "Cadastros por dia",
+      "chartSubtitle": "Empresas criadas nos últimos 30 dias.",
+      "chartEmpty": "Nenhum cadastro no período.",
+      "chartPoint": "{day}: {count} cadastros"
+    },
+    "tenants": {
+      "title": "Empresas",
+      "subtitle": "Todas as empresas da plataforma.",
+      "searchLabel": "Buscar",
+      "searchPlaceholder": "Nome, slug ou e-mail",
+      "filterStatus": "Situação",
+      "allStatuses": "Todas",
+      "tableCaption": "Empresas cadastradas na plataforma",
+      "colCompany": "Empresa",
+      "colPlan": "Plano",
+      "colStatus": "Situação",
+      "colUsers": "Usuários",
+      "colTrialEnds": "Fim da avaliação",
+      "colCreated": "Criada em",
+      "colActions": "Ações",
+      "empty": "Nenhuma empresa encontrada.",
+      "noPlan": "Sem plano",
+      "changePlan": "Mudar o plano de {name}",
+      "extendTrial": "Estender a avaliação de {name}",
+      "reactivate": "Reativar {name}",
+      "suspend": "Suspender {name}",
+      "pageOf": "Página {page} de {totalPages}",
+      "previous": "Anterior",
+      "next": "Próxima",
+      "reactivateTitle": "Reativar empresa",
+      "reactivateConfirm": "Devolver o acesso a {name} e a todos os usuários dela?"
+    },
+    "plans": {
+      "title": "Planos",
+      "subtitle": "Catálogo comercial da plataforma.",
+      "newPlan": "Novo plano",
+      "tableCaption": "Planos comerciais disponíveis",
+      "colName": "Plano",
+      "colPrice": "Preço",
+      "colTrial": "Avaliação",
+      "colLimits": "Limites",
+      "colStatus": "Situação",
+      "colActions": "Ações",
+      "empty": "Nenhum plano cadastrado.",
+      "unlimited": "Ilimitado",
+      "trialDaysValue": "{days, plural, one {# dia} other {# dias}}",
+      "limitsSummary": "{users} usuários · {storage} MB",
+      "activeTag": "Ativo",
+      "inactiveTag": "Inativo",
+      "edit": "Editar o plano {name}",
+      "form": {
+        "createTitle": "Novo plano",
+        "editTitle": "Editar plano",
+        "subtitle": "Limites em branco valem como ilimitado.",
+        "code": "Código",
+        "name": "Nome",
+        "description": "Descrição",
+        "price": "Preço",
+        "currency": "Moeda",
+        "trialDays": "Dias de avaliação",
+        "sortOrder": "Ordem",
+        "maxUsers": "Máximo de usuários",
+        "maxStorageMb": "Armazenamento (MB)",
+        "unlimitedPlaceholder": "Ilimitado",
+        "limits": "Limites por recurso (JSON)",
+        "limitsHint": "Contadores próprios do produto, por exemplo {\"projects\": 10}. Em branco, os limites atuais ficam como estão.",
+        "features": "Funcionalidades (JSON)",
+        "featuresHint": "Flags booleanas, por exemplo {\"concurrentSessions\": true}. Em branco, as atuais ficam como estão.",
+        "isDefault": "Plano padrão de novos cadastros",
+        "active": "Disponível para contratação",
+        "createSubmit": "Criar plano",
+        "invalid": "Revise os campos: algum valor não é aceito pelo contrato do plano.",
+        "invalidJson": "Limites e funcionalidades precisam ser um objeto JSON válido."
+      }
+    },
+    "suspendDialog": {
+      "title": "Suspender {name}",
+      "description": "A suspensão bloqueia o acesso de {name} imediatamente.",
+      "effect": "Todos os usuários dessa empresa perdem o acesso na hora. Os dados continuam guardados.",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "Por que esta empresa está sendo suspensa?",
+      "reasonHint": "Fica registrado e é o que explica a suspensão depois. Mínimo de 3 caracteres.",
+      "confirm": "Suspender"
+    },
+    "planDialog": {
+      "title": "Mudar de plano",
+      "description": "Escolha o novo plano de {name}.",
+      "planLabel": "Plano",
+      "choose": "Selecione…",
+      "confirm": "Mudar plano"
+    },
+    "trialDialog": {
+      "title": "Estender avaliação",
+      "description": "Quantos dias a mais de avaliação para {name}?",
+      "daysLabel": "Dias",
+      "daysHint": "De 1 a 365 dias, contados a partir do fim atual.",
+      "confirm": "Estender"
+    },
+    "toast": {
+      "tenantSuspended": "Empresa suspensa.",
+      "tenantReactivated": "Empresa reativada.",
+      "planChanged": "Plano alterado.",
+      "trialExtended": "Avaliação estendida.",
+      "planCreated": "Plano criado.",
+      "planUpdated": "Plano atualizado."
+    }
   }
 }

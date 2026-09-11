@@ -4,6 +4,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 type Headers = Record<string, string>;
 
 /**
+ * Per-request options. `cookies` REPLACE a named cookie just for this request;
+ * `headers` add headers a browser sends on its own and supertest does not
+ * (`user-agent`, `accept-language`) — without them there is no way to prove,
+ * end to end, that the server records them.
+ */
+type RequestOptions = { cookies?: Record<string, string>; headers?: Headers };
+
+/**
  * A tiny cookie-jar + CSRF aware HTTP client over supertest.
  *
  * Browsers do two things this wrapper emulates: (a) persist Set-Cookie across
@@ -20,10 +28,6 @@ export class E2EClient {
 
   private server(): ReturnType<NestFastifyApplication['getHttpServer']> {
     return this.app.getHttpServer();
-  }
-
-  private cookieHeader(): string {
-    return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
   }
 
   /** Persist Set-Cookie values from a response into the jar (handles clears). */
@@ -44,44 +48,54 @@ export class E2EClient {
     }
   }
 
-  /** Fetch a CSRF token and store its cookie so unsafe calls can succeed. */
+  /**
+   * Fetch a CSRF token and store its cookie so unsafe calls can succeed.
+   *
+   * Fails here, and loudly, if the route returns no token. Without this guard
+   * an undefined `csrfToken` only showed up much later — and in a different
+   * test — as `Invalid value "undefined" for header "x-csrf-token"`, which says
+   * nothing about what went wrong, or where.
+   */
   async bootstrapCsrf(): Promise<void> {
     const res = await this.get('/api/auth/csrf');
-    this.csrfToken = res.body.csrfToken;
+    const token = res.body?.csrfToken as string | undefined;
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new Error(
+        `GET /api/auth/csrf returned no token (status ${res.status}): ${JSON.stringify(res.body)}`,
+      );
+    }
+    this.csrfToken = token;
   }
 
   /**
    * Build the Cookie header from the jar, with optional one-off overrides that
    * REPLACE a named cookie just for this request (merged with — not clobbering —
-   * the rest of the jar, so e.g. the csrf_token cookie always rides along).
+   * the rest of the jar, so e.g. the csrf_token cookie always rides along), then
+   * apply any per-request headers.
    */
-  private applyCommon(req: supertest.Test, overrides?: Record<string, string>): supertest.Test {
+  private applyCommon(req: supertest.Test, opts: RequestOptions): supertest.Test {
     const merged = new Map(this.cookies);
-    if (overrides) for (const [k, v] of Object.entries(overrides)) merged.set(k, v);
+    if (opts.cookies) for (const [k, v] of Object.entries(opts.cookies)) merged.set(k, v);
     const cookie = [...merged.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
     if (cookie) req.set('Cookie', cookie);
+    for (const [name, value] of Object.entries(opts.headers ?? {})) req.set(name, value);
     return req;
   }
 
-  async get(
-    path: string,
-    opts: { cookies?: Record<string, string> } = {},
-  ): Promise<supertest.Response> {
-    const req = this.applyCommon(supertest(this.server()).get(path), opts.cookies);
+  /** Same wiring for every unsafe verb: jar + overrides + the CSRF header. */
+  private unsafe(req: supertest.Test, opts: RequestOptions): supertest.Test {
+    return this.applyCommon(req, opts).set('x-csrf-token', this.csrfToken);
+  }
+
+  async get(path: string, opts: RequestOptions = {}): Promise<supertest.Response> {
+    const req = this.applyCommon(supertest(this.server()).get(path), opts);
     const res = await req;
     this.storeCookies(res);
     return res;
   }
 
-  async post(
-    path: string,
-    body?: unknown,
-    opts: { cookies?: Record<string, string> } = {},
-  ): Promise<supertest.Response> {
-    const req = this.applyCommon(supertest(this.server()).post(path), opts.cookies).set(
-      'x-csrf-token',
-      this.csrfToken,
-    );
+  async post(path: string, body?: unknown, opts: RequestOptions = {}): Promise<supertest.Response> {
+    const req = this.unsafe(supertest(this.server()).post(path), opts);
     const res = body === undefined ? await req : await req.send(body as object);
     this.storeCookies(res);
     return res;
@@ -90,25 +104,23 @@ export class E2EClient {
   async patch(
     path: string,
     body?: unknown,
-    opts: { cookies?: Record<string, string> } = {},
+    opts: RequestOptions = {},
   ): Promise<supertest.Response> {
-    const req = this.applyCommon(supertest(this.server()).patch(path), opts.cookies).set(
-      'x-csrf-token',
-      this.csrfToken,
-    );
+    const req = this.unsafe(supertest(this.server()).patch(path), opts);
     const res = body === undefined ? await req : await req.send(body as object);
     this.storeCookies(res);
     return res;
   }
 
-  async delete(
-    path: string,
-    opts: { cookies?: Record<string, string> } = {},
-  ): Promise<supertest.Response> {
-    const req = this.applyCommon(supertest(this.server()).delete(path), opts.cookies).set(
-      'x-csrf-token',
-      this.csrfToken,
-    );
+  async put(path: string, body?: unknown, opts: RequestOptions = {}): Promise<supertest.Response> {
+    const req = this.unsafe(supertest(this.server()).put(path), opts);
+    const res = body === undefined ? await req : await req.send(body as object);
+    this.storeCookies(res);
+    return res;
+  }
+
+  async delete(path: string, opts: RequestOptions = {}): Promise<supertest.Response> {
+    const req = this.unsafe(supertest(this.server()).delete(path), opts);
     const res = await req;
     this.storeCookies(res);
     return res;

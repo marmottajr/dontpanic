@@ -1,7 +1,15 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
+import { config as loadEnv } from 'dotenv';
 import type { NextConfig } from 'next';
+
+// The repo-root .env is the single source of truth (see CLAUDE.md), but Next
+// only auto-loads .env files sitting next to the app. Pull the root one in here,
+// before the config is evaluated, so NEXT_PUBLIC_* values are inlined into the
+// client bundle. Real environment variables always win — dotenv never
+// overwrites what the process already has.
+loadEnv({ path: ['../../.env', '.env'], quiet: true });
 import createNextIntlPlugin from 'next-intl/plugin';
 import { withSentryConfig } from '@sentry/nextjs';
 

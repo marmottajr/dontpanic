@@ -1,3 +1,4 @@
+import { makePrismaMock, type PrismaMock } from '../../../../test/prisma-mock';
 import { sha256 } from '../support/crypto.util';
 import { TokenService } from './token.service';
 
@@ -20,7 +21,7 @@ function makeConfig() {
 
 describe('TokenService', () => {
   let jwt: { sign: jest.Mock; verify: jest.Mock };
-  let prisma: {
+  let prisma: PrismaMock & {
     refreshToken: {
       create: jest.Mock;
       updateMany: jest.Mock;
@@ -36,7 +37,7 @@ describe('TokenService', () => {
       sign: jest.fn().mockReturnValue('signed.jwt'),
       verify: jest.fn().mockReturnValue({ sub: 'u1', email: 'a@b.com', role: 'USER' }),
     };
-    prisma = {
+    prisma = makePrismaMock({
       refreshToken: {
         create: jest
           .fn()
@@ -44,7 +45,7 @@ describe('TokenService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
-    };
+    });
     service = new TokenService(jwt as never, makeConfig(), prisma as never);
   });
 
@@ -116,40 +117,49 @@ describe('TokenService', () => {
   });
 
   describe('revocation', () => {
-    it('revokeFamily revokes every still-active token in the family', async () => {
-      await service.revokeFamily('fam-1');
+    // Every path records WHY the session ended. The column is what later lets
+    // the app tell someone they were signed out by a replay rather than leaving
+    // them staring at a login screen that looks broken.
+    it('revokeFamily revokes every still-active token in the family with the reason', async () => {
+      await service.revokeFamily('fam-1', 'REUSE_DETECTED');
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { familyId: 'fam-1', revokedAt: null },
-        data: { revokedAt: expect.any(Date) },
+        data: { revokedAt: expect.any(Date), revokedReason: 'REUSE_DETECTED' },
       });
     });
 
-    it('revokeToken marks one token revoked and records its replacement', async () => {
-      await service.revokeToken('rt-9', 'rt-10');
+    it('revokeFamily leaves already-revoked rows alone, so their reason survives', async () => {
+      await service.revokeFamily('fam-1', 'REUSE_DETECTED');
+      // `revokedAt: null` in the filter is what protects the earlier reason.
+      expect(prisma.refreshToken.updateMany.mock.calls[0][0].where.revokedAt).toBeNull();
+    });
+
+    it('revokeToken marks one token revoked with its reason and replacement', async () => {
+      await service.revokeToken('rt-9', 'LOGOUT', 'rt-10');
       expect(prisma.refreshToken.update).toHaveBeenCalledWith({
         where: { id: 'rt-9' },
-        data: { revokedAt: expect.any(Date), replacedById: 'rt-10' },
+        data: { revokedAt: expect.any(Date), revokedReason: 'LOGOUT', replacedById: 'rt-10' },
       });
     });
 
     it('revokeToken without a replacement sets replacedById null', async () => {
-      await service.revokeToken('rt-9');
+      await service.revokeToken('rt-9', 'LOGOUT');
       expect(prisma.refreshToken.update.mock.calls[0][0].data.replacedById).toBeNull();
     });
 
-    it('revokeAllForUser revokes every active token for the user', async () => {
-      await service.revokeAllForUser('u1');
+    it('revokeAllForUser revokes every active token for the user with the reason', async () => {
+      await service.revokeAllForUser('u1', 'LOGOUT');
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null },
-        data: { revokedAt: expect.any(Date) },
+        data: { revokedAt: expect.any(Date), revokedReason: 'LOGOUT' },
       });
     });
 
     it('revokeOtherFamilies revokes every active token except the kept family', async () => {
-      await service.revokeOtherFamilies('u1', 'fam-keep');
+      await service.revokeOtherFamilies('u1', 'fam-keep', 'LOGOUT');
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { userId: 'u1', revokedAt: null, NOT: { familyId: 'fam-keep' } },
-        data: { revokedAt: expect.any(Date) },
+        data: { revokedAt: expect.any(Date), revokedReason: 'LOGOUT' },
       });
     });
   });

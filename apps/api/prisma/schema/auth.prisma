@@ -1,0 +1,141 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Sessions, credentials, legal acceptance and audit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Why a session ended. It exists so the application can EXPLAIN itself.
+///
+/// Without it, someone signed out because another person logged in with the
+/// same password sees the ordinary login screen and concludes the system is
+/// broken. With it, they see what happened and the advice to change their
+/// password if it was not them — the one moment that advice is useful.
+enum SessionEndReason {
+  /// Normal rotation: the token was replaced by its successor.
+  ROTATED
+  /// The user signed out.
+  LOGOUT
+  /// A token was replayed after rotation: the whole family was revoked.
+  REUSE_DETECTED
+  /// Signed in elsewhere and the plan allows only one session at a time.
+  SIGNED_IN_ELSEWHERE
+}
+
+model RefreshToken {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @db.Uuid
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash     String            @unique
+  familyId      String            @db.Uuid // rotation family — enables reuse detection
+  replacedById  String?           @db.Uuid
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  /// Null while the token is alive.
+  revokedReason SessionEndReason?
+  userAgent     String?
+  ip            String?
+  createdAt     DateTime          @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model TwoFactorBackupCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
+}
+
+/// Legal documents a tenant accepts when the account is created.
+enum LegalDocumentKind {
+  TERMS_OF_USE
+  PRIVACY_POLICY
+}
+
+/// Evidence that the terms were accepted: which document, which version, when,
+/// by whom and from where.
+///
+/// A ticked box that leaves no trace proves nothing when someone says they
+/// never agreed. What gives an electronic acceptance its weight is not the box
+/// but the circumstances you can demonstrate afterwards — hence the document
+/// VERSION, without which the evidence would point at a text that may no longer
+/// be the one the person read.
+///
+/// One row per document and version: a new version appends to the history
+/// instead of overwriting it.
+model LegalAcceptance {
+  id       String            @id @default(uuid()) @db.Uuid
+  tenantId String            @db.Uuid
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Nullable: the account that accepted may later be deleted, and the
+  /// company's acceptance still stands.
+  userId   String?           @db.Uuid
+  user     User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  document LegalDocumentKind
+  version  String
+
+  acceptedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, document, version])
+  @@map("legal_acceptances")
+}
+
+/// Who changed what, with before/after values.
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String?  @db.Uuid
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String
+  /// Table and row affected, when the action is about one entity.
+  entity       String?
+  entityId     String?  @db.Uuid
+  valuesBefore Json?
+  valuesAfter  Json?
+  ip           String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}

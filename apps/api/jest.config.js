@@ -5,44 +5,39 @@ module.exports = {
   testRegex: '.*\\.spec\\.ts$',
   testEnvironment: 'node',
   transform: {
-    // ts-jest compiles BOTH .ts (our code) and .js — the latter is needed to
-    // down-level the ESM-only deps in the otplib chain (otplib + @otplib/* +
-    // @scure/base are "type":"module" and ship native ESM that Node-Jest can't
-    // require as-is). Compiling them to CJS via ts-jest keeps the otplib TOTP
-    // path real in tests (no mocking of the crypto we want to exercise).
-    '^.+\\.(t|j)s$': [
+    // Only our own TypeScript. Node 24 requires ESM natively, so the ESM-only
+    // otplib chain (otplib + @otplib/* + @scure/base) loads as-is — no
+    // down-levelling to CommonJS, and node_modules stays untransformed.
+    '^.+\\.ts$': [
       'ts-jest',
       {
-        // tsconfig.jest.json extends tsconfig.json (decorators +
-        // emitDecoratorMetadata), adds jest/node types + spec files, and turns
-        // on allowJs so the whitelisted ESM otplib chain compiles to CJS.
         tsconfig: '<rootDir>/../tsconfig.jest.json',
         isolatedModules: false,
       },
     ],
   },
-  // By default node_modules is NOT transformed. Whitelist the ESM-only otplib
-  // dependency chain so ts-jest can compile it to CommonJS. pnpm nests a second
-  // `/node_modules/` segment (…/.pnpm/@scure+base@x/node_modules/@scure/base),
-  // so the negative lookahead must allow ANY path that contains one of these
-  // package dirs anywhere — hence the `.*` before the package alternation.
-  transformIgnorePatterns: ['/node_modules/(?!.*(otplib|@otplib|@scure|@noble))'],
   setupFiles: ['<rootDir>/../test/setup.ts'],
   collectCoverageFrom: [
     '**/*.ts',
     '!**/*.module.ts',
     '!**/*.spec.ts',
+    // Bootstrap side-effect modules: they run before the Nest app exists and
+    // have no seam a unit test could hold on to.
     '!main.ts',
+    '!load-env.ts',
+    '!instrument.ts',
     '!**/*.dto.ts',
-    // HTTP controllers + the prisma lifecycle + the request-scoped param
-    // decorator are the integration surface: they're driven end-to-end by the
-    // e2e suite (test/auth.e2e-spec.ts against a real Postgres), not by these
-    // infra-free units. Excluding them keeps the UNIT coverage number honest —
-    // it reflects the business logic (services/guards/adapters/utils) the unit
+    // HTTP controllers + the request-scoped param decorator are the
+    // integration surface: they're driven end-to-end by the e2e suite
+    // (test/auth.e2e-spec.ts against a real Postgres), not by these infra-free
+    // units. Excluding them keeps the UNIT coverage number honest — it
+    // reflects the business logic (services/guards/adapters/utils) the unit
     // suite actually exercises. (The e2e run covers the controllers for real.)
+    // PrismaService is NOT excluded: it stopped being lifecycle glue when
+    // tenant isolation moved into it (withScope/asSystem/atomic/db), and that
+    // logic is unit-tested in infra/prisma/prisma.service.spec.ts.
     '!**/*.controller.ts',
     '!**/current-user.decorator.ts',
-    '!infra/prisma/prisma.service.ts',
   ],
   coverageDirectory: '../coverage',
   coverageReporters: ['text', 'text-summary'],

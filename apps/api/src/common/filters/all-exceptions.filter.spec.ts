@@ -3,7 +3,9 @@ import {
   HttpException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { sessionEndReasons } from '@dontpanic/shared';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { marvinQuip } from '../marvin';
 
@@ -80,5 +82,62 @@ describe('AllExceptionsFilter', () => {
     const { host } = makeHost();
     filter.catch(new Error('boom'), host);
     expect(errorSpy).toHaveBeenCalled();
+  });
+
+  // The envelope is a contract with the browser and stays closed by default.
+  // `sessionEnded` is the one field allowed through, and only after the shared
+  // contract recognises its value — the filter copies a name, never a body.
+  describe('sessionEnded', () => {
+    const send = (exception: unknown) => {
+      const { host, reply } = makeHost();
+      filter.catch(exception, host);
+      return reply.send.mock.calls[0][0];
+    };
+
+    it.each(sessionEndReasons)('lets the declared reason %s through', (reason) => {
+      const body = send(
+        new UnauthorizedException({ message: 'Invalid session', sessionEnded: reason }),
+      );
+      expect(body.sessionEnded).toBe(reason);
+      // Still the ordinary envelope — the reason rides alongside, and Marvin
+      // keeps his lines.
+      expect(body.statusCode).toBe(401);
+      expect(body.marvin).toBe(marvinQuip(401));
+    });
+
+    it('drops a reason the contract does not declare', () => {
+      const body = send(
+        new UnauthorizedException({ message: 'nope', sessionEnded: 'nuclear-meltdown' }),
+      );
+      expect(body.sessionEnded).toBeUndefined();
+    });
+
+    it('drops a non-string that is pretending to be a reason', () => {
+      const body = send(
+        new UnauthorizedException({ message: 'nope', sessionEnded: { toString: () => 'logout' } }),
+      );
+      expect(body.sessionEnded).toBeUndefined();
+    });
+
+    it('omits the key entirely on an ordinary error', () => {
+      const body = send(new NotFoundException('No such thing'));
+      expect('sessionEnded' in body).toBe(false);
+    });
+
+    it('copies nothing else the exception body happens to carry', () => {
+      const body = send(
+        new UnauthorizedException({
+          message: 'Invalid session',
+          sessionEnded: 'expired',
+          // The kind of field that would become an accidental public API if the
+          // filter ever spread the exception body instead of naming one key.
+          internalUserId: 'u-42',
+          tokenHash: 'deadbeef',
+        }),
+      );
+      expect(body.sessionEnded).toBe('expired');
+      expect(JSON.stringify(body)).not.toContain('u-42');
+      expect(JSON.stringify(body)).not.toContain('deadbeef');
+    });
   });
 });

@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes';
 import { useTranslations } from 'next-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
+import { SessionEndedDialog } from '@/components/session-ended-dialog';
 import { applyZodI18n } from '@/lib/zod-error-map';
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -28,6 +29,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         {children}
+        <SessionEndedDialog />
         <Toaster richColors closeButton position="top-right" />
       </QueryClientProvider>
     </ThemeProvider>

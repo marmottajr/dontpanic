@@ -1,4 +1,5 @@
-// Sentry must initialise before anything it instruments — keep this import first.
+// .env first, then Sentry (which reads it), then everything they instrument.
+import './load-env';
 import './instrument';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
@@ -13,13 +14,17 @@ import fastifyCsrf from '@fastify/csrf-protection';
 import fastifyMultipart from '@fastify/multipart';
 import type { preHandlerHookHandler } from 'fastify';
 import { AppModule } from './app.module';
-import type { Env } from './config/env';
+import { parseTrustProxy, type Env } from './config/env';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({
-      trustProxy: true,
+      // Who may set X-Forwarded-For. The rate limiter buckets on the resulting
+      // req.ip, so `true` here (trust everyone) would let any caller forge the
+      // header and mint a fresh bucket per request. Read straight from
+      // process.env: the adapter is built before ConfigService exists.
+      trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
       // Honour an inbound x-request-id (from an upstream proxy) or mint one, so
       // every log line and error envelope shares a single correlation id.
       requestIdHeader: 'x-request-id',

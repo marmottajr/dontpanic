@@ -32,6 +32,19 @@
   /* accent — amber-gold (the 42) */
   --accent: oklch(0.82 0.13 78);
   --accent-foreground: oklch(0.27 0.05 70);
+  /*
+   * Amber as TEXT, not as background.
+   *
+   * `--accent-foreground` is the colour you read on FULL amber. Most of the
+   * product uses amber as a wash (`bg-accent/15`, `bg-accent/20`), and there
+   * the surface luminance follows the PAGE background, not the amber — which
+   * is why the dark brown of `-foreground` was unreadable in the dark theme:
+   * dark text on dark olive.
+   *
+   * This token exists for that case and, like `--primary` and `--destructive`,
+   * has its own value per theme.
+   */
+  --accent-strong: oklch(0.48 0.11 70);
 
   --destructive: oklch(0.58 0.21 27);
   --destructive-foreground: oklch(0.99 0.01 20);
@@ -76,6 +89,8 @@
 
   --accent: oklch(0.83 0.14 80);
   --accent-foreground: oklch(0.26 0.05 70);
+  /* On a dark background the readable amber is the light one — see the note in the light theme. */
+  --accent-strong: oklch(0.86 0.13 80);
 
   --destructive: oklch(0.66 0.2 25);
   --destructive-foreground: oklch(0.98 0.01 20);
@@ -120,6 +135,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-strong: var(--accent-strong);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
@@ -151,10 +167,7 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     /* subtle paper/space grain */
-    background-image: radial-gradient(
-      oklch(0.5 0.02 265 / 3%) 0.5px,
-      transparent 0.5px
-    );
+    background-image: radial-gradient(oklch(0.5 0.02 265 / 3%) 0.5px, transparent 0.5px);
     background-size: 4px 4px;
   }
   ::selection {

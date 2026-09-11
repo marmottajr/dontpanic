@@ -2,22 +2,26 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@ne
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type {
+  SignupResponse,
   AuthUserResponse,
   CsrfTokenResponse,
   LoginResponse,
   MessageResponse,
-  UserDto,
 } from '@dontpanic/shared';
 import { Public } from '../../common/decorators/public.decorator';
 import { SkipTwoFactorGate } from '../../common/decorators/skip-two-factor-gate.decorator';
+import { SensitiveThrottle } from '../../common/decorators/sensitive-throttle.decorator';
+import { RequireCaptcha } from '../../common/decorators/require-captcha.decorator';
+import { SystemScope } from '../../infra/tenancy/system-scope.decorator';
 import { AuthService, type RequestContext } from './services/auth.service';
+import { SignupService } from './services/signup.service';
 import { CookieService, REFRESH_COOKIE } from './support/cookies';
 import {
   ForgotPasswordDto,
   LoginDto,
-  RegisterDto,
   ResendVerificationDto,
   ResetPasswordDto,
+  SignupDto,
   TwoFactorVerifyDto,
   VerifyEmailDto,
 } from './dto/auth.dto';
@@ -29,6 +33,7 @@ type ReqWithCookies = FastifyRequest & { cookies?: Record<string, string> };
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly signupService: SignupService,
     private readonly cookies: CookieService,
   ) {}
 
@@ -38,15 +43,27 @@ export class AuthController {
     return { ip: req.ip, userAgent: req.headers['user-agent'] ?? null, locale };
   }
 
+  /**
+   * Self-serve company registration: the entry point for a new customer.
+   *
+   * `@SystemScope()` because there is no tenant yet to derive a scope from —
+   * it is one of the few legitimate exceptions to tenant isolation, and every
+   * route carrying it deserves a second look in review.
+   */
   @Public()
-  @Post('register')
-  @ApiOperation({ summary: 'Create an account and email a verification code' })
-  async register(@Body() dto: RegisterDto, @Req() req: FastifyRequest): Promise<UserDto> {
-    return this.auth.register(dto, this.ctx(req));
+  @SystemScope()
+  @Post('signup')
+  @SensitiveThrottle()
+  @RequireCaptcha('signup')
+  @ApiOperation({ summary: 'Register a company and its first administrator' })
+  async signup(@Body() dto: SignupDto, @Req() req: FastifyRequest): Promise<SignupResponse> {
+    return this.signupService.signup(dto, this.ctx(req));
   }
 
   @Public()
+  @SystemScope()
   @Post('verify-email')
+  @SensitiveThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Confirm an email address with the 6-digit code' })
   async verifyEmail(
@@ -57,7 +74,10 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('resend-verification')
+  @SensitiveThrottle()
+  @RequireCaptcha('resend-verification')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend the email-verification code' })
   async resendVerification(
@@ -68,7 +88,10 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('login')
+  @SensitiveThrottle()
+  @RequireCaptcha('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate; sets auth cookies or returns a 2FA challenge' })
   async login(
@@ -86,7 +109,9 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('2fa/verify')
+  @SensitiveThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete login by verifying a TOTP or backup code' })
   async verifyTwoFactor(
@@ -101,6 +126,7 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate the refresh token and reissue auth cookies' })
@@ -142,7 +168,10 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('forgot-password')
+  @SensitiveThrottle()
+  @RequireCaptcha('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password-reset email (always returns 200)' })
   async forgotPassword(
@@ -156,7 +185,10 @@ export class AuthController {
   }
 
   @Public()
+  @SystemScope()
   @Post('reset-password')
+  @SensitiveThrottle()
+  @RequireCaptcha('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Set a new password using a reset token' })
   async resetPassword(

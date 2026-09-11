@@ -5,7 +5,7 @@
   "description": "DontPanic — a production-grade full-stack boilerplate. The answer to building any system. (Marvin would say: 'Here I am, brain the size of a planet, scaffolding your CRUD app.')",
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": ">=22",
+    "node": ">=24.9",
     "pnpm": ">=11"
   },
   "scripts": {
@@ -26,13 +26,13 @@
     "*.{ts,tsx,mjs,cjs,js,jsx,json,md,yml,yaml,css}": "prettier --write"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
-    "@commitlint/cli": "21.0.2",
-    "@commitlint/config-conventional": "21.0.2",
+    "@changesets/cli": "^3.0.2",
+    "@commitlint/cli": "21.2.2",
+    "@commitlint/config-conventional": "21.2.2",
     "husky": "^9.1.7",
-    "lint-staged": "17.0.7",
-    "prettier": "^3.8.4",
-    "turbo": "^2.9.18",
+    "lint-staged": "17.5.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
     "typescript": "6.0.3"
   }
 }

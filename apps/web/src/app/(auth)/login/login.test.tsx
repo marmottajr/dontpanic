@@ -93,10 +93,7 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Email')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Create one' })).toHaveAttribute(
-      'href',
-      '/register',
-    );
+    expect(screen.getByRole('link', { name: 'Create one' })).toHaveAttribute('href', '/signup');
   });
 
   it('submits credentials and navigates on success', async () => {
@@ -128,9 +125,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Password'), 'wrong-pass');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Incorrect email or password.',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect email or password.');
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -151,7 +146,9 @@ describe('LoginPage', () => {
 
   it('toasts a generic error on an unexpected failure', async () => {
     const user = userEvent.setup();
-    apiMock.mockRejectedValueOnce(new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }));
+    apiMock.mockRejectedValueOnce(
+      new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }),
+    );
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');
@@ -226,7 +223,9 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     apiMock
       .mockResolvedValueOnce({ twoFactorRequired: true, ticket: 'tkt-1' })
-      .mockRejectedValueOnce(new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }));
+      .mockRejectedValueOnce(
+        new ApiError(500, { statusCode: 500, error: 'Error', message: 'boom' }),
+      );
     renderLogin();
 
     await user.type(screen.getByLabelText('Email'), 'ford@betelgeuse.net');

@@ -15,13 +15,14 @@ jest.mock('sharp', () => ({
   default: sharpFactory,
 }));
 
+import { makePrismaMock, type PrismaMock } from '../../../../test/prisma-mock';
 import { AvatarService } from './avatar.service';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const WEBP_OUT = Buffer.from('processed-webp');
 
 describe('AvatarService', () => {
-  let prisma: { user: { update: jest.Mock } };
+  let prisma: PrismaMock & { user: { update: jest.Mock } };
   let storage: { putObject: jest.Mock; deleteObject: jest.Mock; getPublicUrl: jest.Mock };
   let service: AvatarService;
 
@@ -32,7 +33,7 @@ describe('AvatarService', () => {
     sharpInstance.webp.mockClear().mockReturnThis();
     toBuffer.mockReset().mockResolvedValue(WEBP_OUT);
 
-    prisma = { user: { update: jest.fn().mockResolvedValue({}) } };
+    prisma = makePrismaMock({ user: { update: jest.fn().mockResolvedValue({}) } });
     storage = {
       putObject: jest.fn().mockResolvedValue({
         key: 'avatars/u1.webp',

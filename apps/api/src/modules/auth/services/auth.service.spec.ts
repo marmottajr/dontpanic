@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makeUser } from '../../../../test/factories';
+import { makePrismaMock } from '../../../../test/prisma-mock';
 import { sha256 } from '../support/crypto.util';
 import { AuthService } from './auth.service';
 
@@ -19,6 +20,22 @@ function makeConfig() {
 
 const ctx = { ip: '1.2.3.4', userAgent: 'UA' };
 
+/**
+ * The `sessionEnded` reason carried by a rejection, or undefined when it carries
+ * none. Read off the exception body, which is exactly what the global filter
+ * sees before deciding whether to let the field through.
+ */
+async function sessionEndedOf(promise: Promise<unknown>): Promise<string | undefined> {
+  const err: unknown = await promise.then(
+    () => {
+      throw new Error('expected the call to reject');
+    },
+    (e: unknown) => e,
+  );
+  const body = (err as { getResponse: () => unknown }).getResponse();
+  return (body as { sessionEnded?: string }).sessionEnded;
+}
+
 describe('AuthService', () => {
   let prisma: any;
   let tokenService: any;
@@ -33,7 +50,10 @@ describe('AuthService', () => {
     mockedArgon.hash.mockResolvedValue('hashed-pw');
     mockedArgon.verify.mockResolvedValue(true);
 
-    prisma = {
+    // The service reads and writes through `prisma.db` (the request's scoped
+    // transaction) — the double's `db` IS the mock, so the assertions below can
+    // still name the delegates directly.
+    prisma = makePrismaMock({
       user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
       emailVerificationToken: {
         create: jest.fn(),
@@ -50,8 +70,7 @@ describe('AuthService', () => {
         count: jest.fn().mockResolvedValue(0),
       },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
-      $transaction: jest.fn().mockResolvedValue([]),
-    };
+    });
     tokenService = {
       issueTokensForUser: jest.fn().mockResolvedValue({ accessToken: 'AT', refreshToken: 'RT' }),
       issueTokensInFamily: jest.fn().mockResolvedValue({
@@ -77,43 +96,30 @@ describe('AuthService', () => {
     service = new AuthService(prisma, makeConfig(), tokenService, twoFactor, cache, mail);
   });
 
-  // --- register ----------------------------------------------------------
+  // --- sendVerificationCode ----------------------------------------------
 
-  describe('register', () => {
-    const input = { email: 'new@user.dev', password: 'Sup3rSecret!', name: 'New User' };
+  describe('sendVerificationCode', () => {
+    it('replaces any live code with a fresh one and mails it', async () => {
+      await service.sendVerificationCode('u-new', 'new@user.dev', 'New User', 'pt-BR');
 
-    it('rejects a duplicate email with 409', async () => {
-      prisma.user.findUnique.mockResolvedValue(makeUser());
-      await expect(service.register(input as never, ctx)).rejects.toBeInstanceOf(ConflictException);
-      expect(prisma.user.create).not.toHaveBeenCalled();
-    });
-
-    it('still registers when the verification email fails to dispatch (non-blocking)', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-      prisma.user.create.mockResolvedValue(makeUser({ id: 'u-new', email: input.email }));
-      mail.send.mockRejectedValue(new Error('smtp down'));
-      await expect(service.register(input as never, ctx)).resolves.toBeDefined();
-      await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
-    });
-
-    it('hashes the password, creates the user, and sends a verification email', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-      const created = makeUser({ id: 'u-new', email: input.email, name: input.name });
-      prisma.user.create.mockResolvedValue(created);
-
-      const dto = await service.register(input as never, ctx);
-
-      expect(mockedArgon.hash).toHaveBeenCalledWith(input.password);
-      expect(prisma.user.create).toHaveBeenCalledWith({
-        data: { email: input.email, passwordHash: 'hashed-pw', name: input.name },
+      // One active code per user: the old rows go before the new one is written.
+      expect(prisma.emailVerificationToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'u-new' },
       });
-      // Verification token persisted as a hash, and an email dispatched.
-      expect(prisma.emailVerificationToken.create).toHaveBeenCalledTimes(1);
+      // The raw code never lands in the database — only its sha256.
+      const written = prisma.emailVerificationToken.create.mock.calls[0][0].data;
+      expect(written.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(written).not.toHaveProperty('code');
       expect(mail.send).toHaveBeenCalledTimes(1);
-      expect(mail.send.mock.calls[0][0].to).toBe(input.email);
-      // Returns a safe DTO (no secrets).
-      expect(dto).not.toHaveProperty('passwordHash');
-      expect(dto.email).toBe(input.email);
+      expect(mail.send.mock.calls[0][0].to).toBe('new@user.dev');
+    });
+
+    it('resolves even when the mail provider is down (dispatch is fire-and-forget)', async () => {
+      mail.send.mockRejectedValue(new Error('smtp down'));
+      await expect(
+        service.sendVerificationCode('u-new', 'new@user.dev', 'New User', 'pt-BR'),
+      ).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
     });
   });
 
@@ -171,7 +177,7 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValue(unverified);
       prisma.emailVerificationToken.findFirst.mockResolvedValue(tokenRow('123456'));
       const res = await service.verifyEmail(EMAIL, '123456', {});
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
       expect(cache.del).toHaveBeenCalled();
       expect(res.message).toMatch(/verified/i);
     });
@@ -416,7 +422,7 @@ describe('AuthService', () => {
     it('detects reuse of an already-revoked token and nukes the family', async () => {
       prisma.refreshToken.findUnique.mockResolvedValue(row({ revokedAt: new Date() }));
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
-      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
     });
 
     it('rejects an expired token', async () => {
@@ -440,7 +446,7 @@ describe('AuthService', () => {
       prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
-      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
     });
 
     it('rotates successfully: claims the row, mints a successor in the same family', async () => {
@@ -462,7 +468,7 @@ describe('AuthService', () => {
       );
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
         where: { id: 'rt-1', revokedAt: null, replacedById: null },
-        data: { revokedAt: expect.any(Date), replacedById: 'rt-new' },
+        data: { revokedAt: expect.any(Date), revokedReason: 'ROTATED', replacedById: 'rt-new' },
       });
       // No second write to fill in replacedById after the fact.
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
@@ -472,6 +478,62 @@ describe('AuthService', () => {
       prisma.refreshToken.findUnique.mockResolvedValue(row());
       prisma.user.findUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
       await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+    });
+
+    // --- what the browser is told --------------------------------------
+    //
+    // A bare 401 is why someone signed out by a replay of their own session
+    // sees the ordinary login screen and concludes the product is broken.
+
+    describe('sessionEnded', () => {
+      it('says reuse-detected when a rotated token is replayed too late', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(
+          row({ revokedAt: new Date(Date.now() - 60_000), replacedById: 'rt-winner' }),
+        );
+        prisma.refreshToken.count.mockResolvedValue(1);
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBe(
+          'reuse-detected',
+        );
+      });
+
+      it('says logout when the replayed token was ended by the user themselves', async () => {
+        // Same hard response (the family still dies), softer story: a tab that
+        // slept through its owner's logout is not a thief, and crying theft
+        // there is how a real warning gets ignored later.
+        prisma.refreshToken.findUnique.mockResolvedValue(
+          row({ revokedAt: new Date(), revokedReason: 'LOGOUT' }),
+        );
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBe('logout');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
+      });
+
+      it('never dresses the invisible ROTATED up as an explanation', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(
+          row({ revokedAt: new Date(Date.now() - 60_000), revokedReason: 'ROTATED' }),
+        );
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBe(
+          'reuse-detected',
+        );
+      });
+
+      it('says expired when the token simply ran out', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(
+          row({ expiresAt: new Date(Date.now() - 1000) }),
+        );
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBe('expired');
+      });
+
+      it('explains nothing for a token it has never seen', async () => {
+        // No row, no evidence — guessing a reason here would be inventing one.
+        prisma.refreshToken.findUnique.mockResolvedValue(null);
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBeUndefined();
+      });
+
+      it('explains nothing when the account itself is gone', async () => {
+        prisma.refreshToken.findUnique.mockResolvedValue(row());
+        prisma.user.findUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
+        await expect(sessionEndedOf(service.refresh(rawToken, ctx))).resolves.toBeUndefined();
+      });
     });
 
     // --- the reuse grace window (two tabs refreshing at once) --------------
@@ -501,7 +563,7 @@ describe('AuthService', () => {
         prisma.refreshToken.count.mockResolvedValue(1);
 
         await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
-        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
       });
 
       it('refuses a recently rotated token once the family is dead', async () => {
@@ -511,7 +573,7 @@ describe('AuthService', () => {
         prisma.refreshToken.count.mockResolvedValue(0);
 
         await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
-        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
       });
 
       it('a logout-revoked token is theft, not concurrency (no successor)', async () => {
@@ -519,7 +581,7 @@ describe('AuthService', () => {
         prisma.refreshToken.count.mockResolvedValue(1);
 
         await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
-        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1');
+        expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-1', 'REUSE_DETECTED');
         expect(prisma.refreshToken.count).not.toHaveBeenCalled(); // short-circuited
       });
 
@@ -560,7 +622,7 @@ describe('AuthService', () => {
         revokedAt: null,
       });
       await service.logout('raw', ctx);
-      expect(tokenService.revokeToken).toHaveBeenCalledWith('rt-1');
+      expect(tokenService.revokeToken).toHaveBeenCalledWith('rt-1', 'LOGOUT');
     });
 
     it('does nothing if the token is already revoked', async () => {
@@ -635,9 +697,45 @@ describe('AuthService', () => {
         ctx,
       );
       expect(mockedArgon.hash).toHaveBeenCalledWith('NewPass1!');
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1');
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1', 'LOGOUT');
       expect(res.message).toMatch(/Password updated/i);
+    });
+  });
+
+  describe('audit', () => {
+    it('stamps the company on a sign-in, so a customer can see their own access log', async () => {
+      // Authentication runs in system scope, where there is no tenant on the
+      // scope to copy — resolving it from the user is what keeps login events
+      // visible to the company they belong to.
+      prisma.user.findUnique.mockResolvedValue({ tenantId: 'tenant-7' });
+
+      await service.audit('auth.login', 'user-1', { ip: '203.0.113.4', userAgent: 'jest' });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'auth.login',
+            tenantId: 'tenant-7',
+            userId: 'user-1',
+            ip: '203.0.113.4',
+          }),
+        }),
+      );
+    });
+
+    it('writes no tenant when there is no user to resolve one from', async () => {
+      await service.audit('auth.forgot_password', null, {});
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ tenantId: null }) }),
+      );
+    });
+
+    it('never lets a failed audit break the request path', async () => {
+      prisma.user.findUnique.mockResolvedValue({ tenantId: 'tenant-7' });
+      prisma.auditLog.create.mockRejectedValue(new Error('audit table is on fire'));
+      await expect(service.audit('auth.login', 'user-1', {})).resolves.toBeUndefined();
     });
   });
 });

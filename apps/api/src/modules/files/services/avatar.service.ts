@@ -2,10 +2,7 @@ import { BadRequestException, Inject, Injectable, PayloadTooLargeException } fro
 import sharp from 'sharp';
 import type { AvatarResponse } from '@dontpanic/shared';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
-import {
-  STORAGE_PROVIDER,
-  type StorageProvider,
-} from '../../../core/storage/storage.provider';
+import { STORAGE_PROVIDER, type StorageProvider } from '../../../core/storage/storage.provider';
 import { sniffImageType } from '../support/image-sniff';
 
 /** 5 MB — mirrors the @fastify/multipart limit registered in main.ts. */
@@ -60,7 +57,7 @@ export class AvatarService {
       contentType: 'image/webp',
     });
 
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { avatarUrl: url },
     });
@@ -71,7 +68,7 @@ export class AvatarService {
   /** Remove the stored object (best-effort) and null the column. */
   async deleteAvatar(userId: string): Promise<AvatarResponse> {
     await this.storage.deleteObject(this.avatarKey(userId));
-    await this.prisma.user.update({
+    await this.prisma.db.user.update({
       where: { id: userId },
       data: { avatarUrl: null },
     });

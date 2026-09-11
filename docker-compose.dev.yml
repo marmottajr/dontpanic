@@ -55,13 +55,19 @@ services:
       # In-container the apps reach the infra by SERVICE NAME on internal ports,
       # not the 42xx host ports. (Compose env overrides .env; @nestjs/config gives
       # process.env precedence over the .env file.)
-      DATABASE_URL: postgresql://dontpanic:dontpanic@postgres:5432/dontpanic?schema=public
+      # Restricted role at runtime so RLS actually applies; the owner is only
+      # for the migrate step in this service's command.
+      DATABASE_URL: postgresql://dontpanic_app:dontpanic_app@postgres:5432/dontpanic?schema=public
+      DATABASE_ADMIN_URL: postgresql://dontpanic:dontpanic@postgres:5432/dontpanic?schema=public
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_URL: http://localhost:4204/dontpanic
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
       WEB_ORIGIN: http://localhost:4200
+      # The web container reaches the API across the compose network, so the
+      # trusted hop is a private address, not loopback.
+      TRUST_PROXY: uniquelocal
       CHOKIDAR_USEPOLLING: 'true'
     volumes: *app-volumes
     ports:

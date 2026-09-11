@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makeUser } from '../../../../test/factories';
+import { makePrismaMock } from '../../../../test/prisma-mock';
 import { sha256 } from '../../auth/support/crypto.util';
 import { UsersService } from './users.service';
 
@@ -29,7 +30,7 @@ describe('UsersService', () => {
     mockedArgon.hash.mockResolvedValue('new-hash');
     mockedArgon.verify.mockResolvedValue(true);
 
-    prisma = {
+    prisma = makePrismaMock({
       user: { findUnique: jest.fn(), update: jest.fn() },
       auditLog: {
         create: jest.fn().mockResolvedValue({}),
@@ -40,8 +41,7 @@ describe('UsersService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
       },
-      $transaction: jest.fn().mockResolvedValue([]),
-    };
+    });
     twoFactor = {
       generateSetup: jest
         .fn()
@@ -174,7 +174,7 @@ describe('UsersService', () => {
         where: { id: 'u1' },
         data: { passwordHash: 'new-hash' },
       });
-      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1');
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1', 'LOGOUT');
     });
   });
 
@@ -255,7 +255,7 @@ describe('UsersService', () => {
       );
       twoFactor.verifyTotp.mockResolvedValue(true);
       await service.disableTwoFactor('u1', { code: '123456' } as never, ctx);
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
       expect(cache.del).toHaveBeenCalledWith('2fa:pending:u1');
     });
 
@@ -266,7 +266,7 @@ describe('UsersService', () => {
       mockedArgon.verify.mockResolvedValue(true);
       await service.disableTwoFactor('u1', { password: 'pw' } as never, ctx);
       expect(mockedArgon.verify).toHaveBeenCalled();
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -416,7 +416,7 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
       prisma.refreshToken.findFirst.mockResolvedValue({ id: 'rt1', familyId: 'fam-A' });
       await service.revokeSession('u1', 'fam-A', ctx);
-      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-A');
+      expect(tokenService.revokeFamily).toHaveBeenCalledWith('fam-A', 'LOGOUT');
     });
 
     it('throws NotFound for a session that is not the caller’s', async () => {
@@ -433,7 +433,7 @@ describe('UsersService', () => {
     it('revokes every family but the current one', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
       await service.revokeOtherSessions('u1', 'fam-current', ctx);
-      expect(tokenService.revokeOtherFamilies).toHaveBeenCalledWith('u1', 'fam-current');
+      expect(tokenService.revokeOtherFamilies).toHaveBeenCalledWith('u1', 'fam-current', 'LOGOUT');
     });
 
     it('throws when the current session cannot be identified', async () => {
@@ -484,8 +484,8 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1' }));
       await service.eraseAccount('u1', ctx);
 
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      // Inspect the user.update operation built inside the transaction array.
+      expect(prisma.atomic).toHaveBeenCalledTimes(1);
+      // Inspect the user.update issued inside the atomic() callback.
       const updateCall = prisma.user.update.mock.calls[0][0];
       expect(updateCall.where).toEqual({ id: 'u1' });
       expect(updateCall.data.name).toBe('Deleted user');
@@ -497,7 +497,7 @@ describe('UsersService', () => {
       // Credential re-hashed to a random value (mock returns 'new-hash').
       expect(mockedArgon.hash).toHaveBeenCalled();
 
-      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1');
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u1', 'LOGOUT');
       expect(cache.del).toHaveBeenCalledWith('2fa:pending:u1');
     });
 

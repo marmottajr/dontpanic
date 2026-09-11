@@ -7,7 +7,8 @@ import type {
   ChangePasswordInput,
   LoginInput,
   LoginResponse,
-  RegisterInput,
+  SignupInput,
+  SignupResponse,
   UpdateProfileInput,
   UserDto,
 } from '@dontpanic/shared';
@@ -30,10 +31,14 @@ export function useLogin() {
   });
 }
 
-export function useRegister() {
+/**
+ * Self-serve signup creates the company and its first administrator in one go —
+ * there is no public way to create a user without a company.
+ */
+export function useSignup() {
   return useMutation({
-    mutationFn: (input: RegisterInput) =>
-      api<UserDto>('/auth/register', { method: 'POST', body: input }),
+    mutationFn: (input: SignupInput) =>
+      api<SignupResponse>('/auth/signup', { method: 'POST', body: input }),
   });
 }
 

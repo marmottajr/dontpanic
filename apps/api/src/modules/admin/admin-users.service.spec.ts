@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { makePrismaMock } from '../../../test/prisma-mock';
 import { AdminUsersService } from './admin-users.service';
 
 jest.mock('argon2');
@@ -27,7 +28,9 @@ describe('AdminUsersService', () => {
 
   beforeEach(() => {
     mockedArgon.hash.mockResolvedValue('hashed-pw');
-    prisma = {
+    // The service reads through `prisma.db` and pairs count+findMany inside
+    // `atomic()`; the shared mock wires both to these same delegates.
+    prisma = makePrismaMock({
       user: {
         count: jest.fn(),
         findMany: jest.fn(),
@@ -36,9 +39,7 @@ describe('AdminUsersService', () => {
         create: jest.fn(),
       },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
-      // Our service passes [count(), findMany()] — resolve them together.
-      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
-    };
+    });
     tokenService = { revokeAllForUser: jest.fn().mockResolvedValue(undefined) };
     service = new AdminUsersService(prisma, tokenService);
   });
@@ -131,7 +132,7 @@ describe('AdminUsersService', () => {
       );
       const res = await service.setLocked('admin1', 'u2', true, ctx);
       expect(prisma.user.update.mock.calls[0][0].data.lockedUntil).toBeInstanceOf(Date);
-      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2');
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2', 'LOGOUT');
       expect(res.locked).toBe(true);
     });
 
@@ -159,7 +160,7 @@ describe('AdminUsersService', () => {
       expect(data.deletedAt).toBeInstanceOf(Date);
       expect(data.email).toMatch(/^deleted\+.*@deleted\.invalid$/);
       expect(data.name).toBe('Deleted user');
-      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2');
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2', 'LOGOUT');
       expect(prisma.auditLog.create).toHaveBeenCalled();
     });
 

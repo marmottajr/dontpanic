@@ -66,12 +66,14 @@ export class TwoFactorService {
 
   /** Persist freshly generated backup-code hashes, wiping any prior ones. */
   async replaceBackupCodes(userId: string, hashes: string[]): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-      this.prisma.twoFactorBackupCode.createMany({
+    // atomic() joins the request's open transaction instead of nesting another:
+    // the wipe and the insert still succeed or fail together.
+    await this.prisma.atomic(async (tx) => {
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+      await tx.twoFactorBackupCode.createMany({
         data: hashes.map((codeHash) => ({ userId, codeHash })),
-      }),
-    ]);
+      });
+    });
   }
 
   /**
@@ -79,12 +81,12 @@ export class TwoFactorService {
    * on the first match, mark it used (single-use). Returns true if consumed.
    */
   async consumeBackupCode(userId: string, code: string): Promise<boolean> {
-    const candidates = await this.prisma.twoFactorBackupCode.findMany({
+    const candidates = await this.prisma.db.twoFactorBackupCode.findMany({
       where: { userId, usedAt: null },
     });
     for (const candidate of candidates) {
       if (await argon2.verify(candidate.codeHash, code)) {
-        await this.prisma.twoFactorBackupCode.update({
+        await this.prisma.db.twoFactorBackupCode.update({
           where: { id: candidate.id },
           data: { usedAt: new Date() },
         });

@@ -14,14 +14,22 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'text-summary'],
       // Scope coverage to the surface this unit/component suite actually
-      // exercises: the UI kit, the api/utils libs, the i18n locale map, the
-      // language switcher and the login screen. Full Next.js pages/layouts,
-      // server-only routes, RSC hooks and the dev-time proxy are integration/
-      // e2e concerns (Playwright) and are intentionally out of this scope so
-      // the threshold reflects what the component suite really covers.
+      // exercises: the UI kit, the record/dashboard/chart component layer, the
+      // api/utils libs, the i18n locale map, the language switcher and the
+      // login screen. Full Next.js pages/layouts, server-only routes, RSC hooks
+      // and the dev-time proxy are integration/e2e concerns (Playwright) and are
+      // intentionally out of this scope so the threshold reflects what the
+      // component suite really covers.
       include: [
         'src/components/ui/**/*.{ts,tsx}',
         'src/components/language-switcher.tsx',
+        'src/components/session-ended-dialog.tsx',
+        'src/components/records/**/*.{ts,tsx}',
+        'src/components/dashboard/**/*.{ts,tsx}',
+        'src/components/charts/**/*.{ts,tsx}',
+        'src/components/tenant/**/*.{ts,tsx}',
+        'src/components/legal/**/*.{ts,tsx}',
+        'src/components/platform/**/*.{ts,tsx}',
         'src/lib/**/*.ts',
         'src/i18n/locales.ts',
         'src/app/(auth)/login/**/*.tsx',
@@ -33,7 +41,7 @@ export default defineConfig({
         // the theme provider at module load and is exercised via e2e, not jsdom units.
         'src/components/ui/sonner.tsx',
       ],
-      // Strong floors at/below the achieved numbers (100/91/97.9/100). Branches
+      // Strong floors at/below the achieved numbers (99.5/97/100/99.7). Branches
       // kept at 88 to absorb the few defensive paths (redirect param, inset
       // prop, same-locale no-op) without making CI flaky.
       thresholds: {

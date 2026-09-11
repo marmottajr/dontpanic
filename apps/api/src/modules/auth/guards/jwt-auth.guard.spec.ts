@@ -31,7 +31,9 @@ describe('JwtAuthGuard', () => {
   it('rejects when no access cookie is present', () => {
     reflector.getAllAndOverride.mockReturnValue(false);
     expect(() => guard.canActivate(makeContext({ cookies: {} }))).toThrow(UnauthorizedException);
-    expect(() => guard.canActivate(makeContext({ cookies: {} }))).toThrow('Authentication required');
+    expect(() => guard.canActivate(makeContext({ cookies: {} }))).toThrow(
+      'Authentication required',
+    );
   });
 
   it('rejects an invalid / tampered token with a generic message', () => {
@@ -53,7 +55,15 @@ describe('JwtAuthGuard', () => {
     const request: Record<string, unknown> = { cookies: { [ACCESS_COOKIE]: 'good.jwt' } };
 
     expect(guard.canActivate(makeContext(request))).toBe(true);
-    expect(request.user).toEqual({ id: 'user-9', email: 'a@b.com', role: 'ADMIN' });
+    expect(request.user).toEqual({
+      id: 'user-9',
+      email: 'a@b.com',
+      role: 'ADMIN',
+      // The tenant travels as a signed claim, never as a header or body field:
+      // it is what the tenant scope — and therefore RLS — is derived from.
+      tenantId: null,
+      fam: undefined,
+    });
     expect(tokenService.verifyAccessToken).toHaveBeenCalledWith('good.jwt');
   });
 });
