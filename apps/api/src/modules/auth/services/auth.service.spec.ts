@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makeUser } from '../../../../test/factories';
 import { makePrismaMock } from '../../../../test/prisma-mock';
@@ -21,6 +21,17 @@ function makeConfig() {
 const ctx = { ip: '1.2.3.4', userAgent: 'UA' };
 
 /**
+ * The message of the Nth mail job handed to the queue. Transactional mail is no
+ * longer sent inline, so the observable effect of a flow is the job it enqueued
+ * — asserting the name too keeps a typo'd job name from passing as a send.
+ */
+function enqueuedMail(queue: any, index = 0): any {
+  const [name, payload] = queue.enqueue.mock.calls[index];
+  expect(name).toBe('mail.send');
+  return payload.message;
+}
+
+/**
  * The `sessionEnded` reason carried by a rejection, or undefined when it carries
  * none. Read off the exception body, which is exactly what the global filter
  * sees before deciding whether to let the field through.
@@ -41,7 +52,7 @@ describe('AuthService', () => {
   let tokenService: any;
   let twoFactor: any;
   let cache: any;
-  let mail: any;
+  let queue: any;
   let service: AuthService;
 
   const mockedArgon = argon2 as jest.Mocked<typeof argon2>;
@@ -91,9 +102,9 @@ describe('AuthService', () => {
       del: jest.fn().mockResolvedValue(undefined),
       incr: jest.fn().mockResolvedValue(1),
     };
-    mail = { send: jest.fn().mockResolvedValue(undefined) };
+    queue = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
-    service = new AuthService(prisma, makeConfig(), tokenService, twoFactor, cache, mail);
+    service = new AuthService(prisma, makeConfig(), tokenService, twoFactor, cache, queue);
   });
 
   // --- sendVerificationCode ----------------------------------------------
@@ -110,16 +121,30 @@ describe('AuthService', () => {
       const written = prisma.emailVerificationToken.create.mock.calls[0][0].data;
       expect(written.tokenHash).toMatch(/^[0-9a-f]{64}$/);
       expect(written).not.toHaveProperty('code');
-      expect(mail.send).toHaveBeenCalledTimes(1);
-      expect(mail.send.mock.calls[0][0].to).toBe('new@user.dev');
+      expect(queue.enqueue).toHaveBeenCalledTimes(1);
+      const message = enqueuedMail(queue);
+      expect(message.to).toBe('new@user.dev');
+      // The code the user has to type must travel in the mail body, and be the
+      // very one whose hash was stored — a mismatch would fail every verify.
+      const code = /\b(\d{6})\b/.exec(message.text as string)?.[1];
+      expect(code).toBeDefined();
+      expect(sha256(code as string)).toBe(written.tokenHash);
+      expect(message.html).toContain(code);
     });
 
-    it('resolves even when the mail provider is down (dispatch is fire-and-forget)', async () => {
-      mail.send.mockRejectedValue(new Error('smtp down'));
+    it('resolves when enqueuing fails, logging instead of failing the caller', async () => {
+      queue.enqueue.mockRejectedValue(new Error('redis down'));
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
       await expect(
         service.sendVerificationCode('u-new', 'new@user.dev', 'New User', 'pt-BR'),
       ).resolves.toBeUndefined();
       await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
+
+      // Swallowed on purpose: resend is the recovery path, and a queue outage
+      // must not turn a successful signup into a 500.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('redis down'));
+      warn.mockRestore();
     });
   });
 
@@ -203,13 +228,14 @@ describe('AuthService', () => {
       });
       await service.resendVerification(EMAIL, { locale: 'en' });
       expect(cache.set).toHaveBeenCalled();
-      expect(mail.send).toHaveBeenCalledTimes(1);
+      expect(queue.enqueue).toHaveBeenCalledTimes(1);
+      expect(enqueuedMail(queue).to).toBe(EMAIL);
     });
 
     it('stays silent (no send) for an unknown account', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       await service.resendVerification(EMAIL, {});
-      expect(mail.send).not.toHaveBeenCalled();
+      expect(queue.enqueue).not.toHaveBeenCalled();
     });
   });
 
@@ -644,22 +670,26 @@ describe('AuthService', () => {
       await expect(
         service.forgotPassword({ email: 'x@y.z' } as never, ctx),
       ).resolves.toBeUndefined();
-      expect(mail.send).not.toHaveBeenCalled();
+      expect(queue.enqueue).not.toHaveBeenCalled();
       expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
     });
 
     it('says nothing for a soft-deleted account either', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ deletedAt: new Date() }));
       await service.forgotPassword({ email: 'x@y.z' } as never, ctx);
-      expect(mail.send).not.toHaveBeenCalled();
+      expect(queue.enqueue).not.toHaveBeenCalled();
     });
 
     it('creates a reset token and sends the email for an existing account', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', email: 'real@user.dev' }));
       await service.forgotPassword({ email: 'real@user.dev' } as never, ctx);
       expect(prisma.passwordResetToken.create).toHaveBeenCalledTimes(1);
-      expect(mail.send).toHaveBeenCalledTimes(1);
-      expect(mail.send.mock.calls[0][0].to).toBe('real@user.dev');
+      expect(queue.enqueue).toHaveBeenCalledTimes(1);
+      const message = enqueuedMail(queue);
+      expect(message.to).toBe('real@user.dev');
+      expect(message.subject).toMatch(/reset your password/i);
+      // The link has to carry the RAW token; only its sha256 is stored.
+      expect(message.html).toContain('/reset-password?token=');
     });
   });
 

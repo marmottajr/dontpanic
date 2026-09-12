@@ -14,6 +14,7 @@ import { CaptchaGuard } from './common/guards/captcha.guard';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { TenancyModule } from './infra/tenancy/tenancy.module';
 import { CacheModule } from './infra/cache/cache.module';
+import { QueueModule } from './infra/queue/queue.module';
 import { StorageModule } from './infra/storage/storage.module';
 import { MailModule } from './infra/mail/mail.module';
 import { CaptchaModule } from './infra/captcha/captcha.module';
@@ -103,6 +104,7 @@ import { AppService } from './app.service';
     PrismaModule,
     TenancyModule,
     CacheModule,
+    QueueModule,
     StorageModule,
     MailModule,
     CaptchaModule,

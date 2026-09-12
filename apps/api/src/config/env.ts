@@ -84,6 +84,19 @@ export const envSchema = z.object({
   LOGIN_MAX_ATTEMPTS: z.coerce.number().default(5),
   LOGIN_LOCK_DURATION: z.coerce.number().default(900),
 
+  // --- background jobs ---
+  // `bullmq` runs work in a separate worker process (see src/worker.ts);
+  // `memory` runs it inline in the caller, for tests and for `pnpm dev`
+  // without a worker. Inline is not a queue: no durability, no retry.
+  QUEUE_DRIVER: z.enum(['bullmq', 'memory']).default('bullmq'),
+  QUEUE_NAME: z.string().default('dontpanic'),
+  /** Namespaces the Redis keys so two apps can share one Redis. */
+  QUEUE_PREFIX: z.string().default('{dontpanic}'),
+  QUEUE_CONCURRENCY: z.coerce.number().min(1).default(5),
+  QUEUE_ATTEMPTS: z.coerce.number().min(1).default(5),
+  /** First retry delay; BullMQ backs off exponentially from here. */
+  QUEUE_BACKOFF: z.coerce.number().default(2000),
+
   // --- captcha ---
   // Human verification on the unauthenticated forms. Off by default so a fresh
   // clone boots without third-party keys; turn it on before going public.

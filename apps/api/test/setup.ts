@@ -1,12 +1,14 @@
 /**
  * Global test env defaults — loaded via jest `setupFiles` BEFORE the test
  * framework/modules import config. Keeps unit tests infra-free (hexagonal):
- * memory cache, console mail, local storage. Dummy secrets satisfy env.ts
+ * memory cache, console mail, local storage, inline queue. Dummy secrets
+ * satisfy env.ts
  * (JWT_*_SECRET / CSRF_SECRET must be >= 16 chars).
  */
 const defaults: Record<string, string> = {
   NODE_ENV: 'test',
   CACHE_DRIVER: 'memory',
+  QUEUE_DRIVER: 'memory',
   MAIL_DRIVER: 'console',
   STORAGE_DRIVER: 'local',
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',

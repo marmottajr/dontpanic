@@ -4,6 +4,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../infra/prisma/prisma.service';
 import { CacheHealthIndicator } from './cache.health';
+import { QueueHealthIndicator } from './queue.health';
 
 @ApiTags('health')
 @Controller('health')
@@ -13,6 +14,7 @@ export class HealthController {
     private readonly prismaIndicator: PrismaHealthIndicator,
     private readonly prisma: PrismaService,
     private readonly cacheIndicator: CacheHealthIndicator,
+    private readonly queueIndicator: QueueHealthIndicator,
   ) {}
 
   @Public()
@@ -22,6 +24,7 @@ export class HealthController {
     return this.health.check([
       () => this.prismaIndicator.pingCheck('database', this.prisma),
       () => this.cacheIndicator.isHealthy('cache'),
+      () => this.queueIndicator.isHealthy('queue'),
     ]);
   }
 }

@@ -24,6 +24,10 @@ export const E2E_ADMIN_DATABASE_URL =
 
 process.env.NODE_ENV = 'test';
 process.env.CACHE_DRIVER = 'memory';
+// No worker process in the e2e run, so jobs run inline in the request. Mail
+// still goes to the console driver; what this buys is that the effect of a job
+// is observable by the time the response comes back.
+process.env.QUEUE_DRIVER = 'memory';
 process.env.MAIL_DRIVER = 'console';
 process.env.STORAGE_DRIVER = 'local';
 process.env.DATABASE_URL = E2E_DATABASE_URL;
