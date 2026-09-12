@@ -10,7 +10,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const templateDir = resolve(here, '../template');
 
 function isEmptyDir(dir: string): boolean {
-  return !existsSync(dir) || readdirSync(dir).length === 0;
+  // One call, not existsSync-then-readdir. A directory that disappears between
+  // the two turns a clean "yes, it is empty" into an ENOENT crash, and the
+  // caller only ever wanted the question answered.
+  try {
+    return readdirSync(dir).length === 0;
+  } catch {
+    return true;
+  }
 }
 
 function run(cmd: string, args: string[], cwd: string): boolean {
@@ -101,22 +108,34 @@ async function main(): Promise<void> {
   pkg.version = '0.1.0';
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-  // .env from the template's .env.example, with rotated secrets.
+  // .env from the template's .env.example, with rotated secrets. Read first and
+  // treat "not there" as a caught error, for the same reason as the compose
+  // files below: check-then-read is a TOCTOU, and the answer to the check is
+  // only ever used to decide whether to read.
   const examplePath = join(dest, '.env.example');
-  if (existsSync(examplePath)) {
-    writeFileSync(
-      join(dest, '.env'),
-      buildEnv(readFileSync(examplePath, 'utf8'), twoFactorRequired),
-    );
+  try {
+    const example = readFileSync(examplePath, 'utf8');
+    writeFileSync(join(dest, '.env'), buildEnv(example, twoFactorRequired));
+  } catch {
+    // No .env.example in the template — nothing to derive a .env from.
   }
 
   // Containers named after the project (my-app-postgres, my-app-mailpit, …) so
   // they don't collide with other DontPanic apps on the same machine.
   for (const composeFile of ['docker-compose.yml', 'docker-compose.dev.yml']) {
     const composePath = join(dest, composeFile);
-    if (existsSync(composePath)) {
-      writeFileSync(composePath, renameContainers(readFileSync(composePath, 'utf8'), projectName));
+    // Read first and treat "not there" as a caught error, rather than asking
+    // `existsSync` and then reading. The check-then-use version is a TOCTOU
+    // (CodeQL js/file-system-race): between the two calls the path can become
+    // something else, and here the follow-up is a write. Small window, real
+    // shape — and the single-call version is shorter anyway.
+    let contents: string;
+    try {
+      contents = readFileSync(composePath, 'utf8');
+    } catch {
+      continue;
     }
+    writeFileSync(composePath, renameContainers(contents, projectName));
   }
   s.stop('Files in place.');
 

@@ -269,6 +269,43 @@ describe('UsersService', () => {
       expect(mockedArgon.verify).toHaveBeenCalled();
       expect(prisma.atomic).toHaveBeenCalledTimes(1);
     });
+
+    /**
+     * The caller picks what to present; it must never pick whether anything is
+     * checked. The nested ternary this replaced let the request body choose the
+     * branch — it still verified, so it was not a hole, but it was the shape of
+     * one (CodeQL js/user-controlled-bypass) and one careless edit away from
+     * being real.
+     */
+    it('runs BOTH verifications whichever factor was offered', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        makeUser({ id: 'u1', twoFactorEnabled: true, twoFactorSecret: 'SECRET' }),
+      );
+      twoFactor.verifyTotp.mockResolvedValue(true);
+
+      await service.disableTwoFactor('u1', { code: '123456' } as never, ctx);
+
+      // Argon2 runs even though only a TOTP code was sent, so the response time
+      // does not disclose which factor the caller chose.
+      expect(twoFactor.verifyTotp).toHaveBeenCalled();
+      expect(mockedArgon.verify).toHaveBeenCalled();
+    });
+
+    it('accepts nothing as proof when the offered factor is empty', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        makeUser({ id: 'u1', twoFactorEnabled: true, twoFactorSecret: 'SECRET' }),
+      );
+      // Both primitives claim success. The empty submission must still be
+      // refused — the guarantee is ours, not inherited from otplib rejecting a
+      // malformed token or Argon2 rejecting an empty one.
+      twoFactor.verifyTotp.mockResolvedValue(true);
+      mockedArgon.verify.mockResolvedValue(true);
+
+      await expect(
+        service.disableTwoFactor('u1', { code: '', password: '' } as never, ctx),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.atomic).not.toHaveBeenCalled();
+    });
   });
 
   // --- email change ------------------------------------------------------
