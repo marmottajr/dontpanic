@@ -1,0 +1,50 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Social sign-in. One row per (provider, account) a user has linked.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum OAuthProviderName {
+  GOOGLE
+  APPLE
+  GITHUB
+}
+
+model OAuthAccount {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Mirrors `User.tenantId` so `app.apply_tenant_rls()` protects this table
+  /// like any other. Null for a SUPERADMIN, who belongs to no company — exactly
+  /// as on the user row it copies.
+  ///
+  /// It is denormalised on purpose: RLS policies are per-table predicates, so a
+  /// table without its own tenant column would have to be left out of the sweep
+  /// and protected by hand, which is the kind of exception that gets forgotten.
+  tenantId String? @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider OAuthProviderName
+  /// The provider's immutable subject id — `sub` for Google and Apple, the
+  /// numeric id for GitHub. Never the e-mail: people change those, and matching
+  /// on a recycled address is how one person inherits another's account.
+  providerAccountId String
+
+  /// The address the provider asserted at link time, kept for display only.
+  /// Authentication matches on `providerAccountId`; this may go stale.
+  email String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The identity is the key. Globally unique, not per tenant: one Google
+  /// account is one person, and letting it link into two companies would make
+  /// "sign in with Google" ambiguous with no way for the user to resolve it.
+  @@unique([provider, providerAccountId])
+  /// One link per provider per user — a second Google account on the same user
+  /// would silently make one of them dead weight.
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("oauth_accounts")
+}

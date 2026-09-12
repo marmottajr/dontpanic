@@ -1,0 +1,71 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Invitations — the only door into an existing company.
+//
+// Public signup creates a company plus its first administrator. Every other
+// user arrives through a row in this table: a company ADMIN adding a colleague,
+// or the platform operator handing over a company it created for a customer.
+// Both produce the same row, because the person clicking the link cannot tell
+// the difference and should not have to.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Stored state. Note that EXPIRED is absent on purpose: expiry is a fact about
+/// `expiresAt` and the clock, not a state anybody transitions into. Deriving it
+/// at read time means a row can never sit in the table claiming to be live
+/// after its deadline just because no job got round to sweeping it.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+model Invitation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Lowercased before writing. Not unique on its own: the same address may be
+  /// invited by two different companies, and may be re-invited by one after a
+  /// previous invitation was revoked or expired. What IS unique is at most one
+  /// PENDING invitation per (tenant, email) — a partial index, created in the
+  /// migration because Prisma's schema language cannot express one.
+  email     String
+  /// A courtesy from the inviter that pre-fills the accept form. The invitee
+  /// can overwrite it; their own answer is what lands on the user row.
+  name      String?
+  role      Role     @default(USER)
+  profileId String?  @db.Uuid
+  profile   Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  /// SHA-256 of the token that travels in the mailed URL. Same discipline as
+  /// password reset: the raw value exists in the e-mail and nowhere else, so a
+  /// leaked database yields no usable invitation links.
+  tokenHash String           @unique
+  status    InvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  /// Nullable because the inviter may later be deleted, and the invitation they
+  /// sent — and the account it produced — still happened.
+  invitedById String? @db.Uuid
+  invitedBy   User?   @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  /// Set on acceptance. Keeping the link is what lets an audit answer "who let
+  /// this person in?" long after the fact.
+  acceptedAt     DateTime?
+  acceptedUserId String?   @db.Uuid
+  acceptedUser   User?     @relation("InvitationAccepted", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+
+  revokedAt DateTime?
+  /// How many times the mail was sent again. Rate-limited by the service; kept
+  /// so an operator can see an invitation that was resent eleven times and go
+  /// look at why it is not arriving.
+  resentCount Int       @default(0)
+  lastSentAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([email])
+  @@map("invitations")
+}

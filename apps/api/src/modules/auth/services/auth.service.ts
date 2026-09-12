@@ -26,7 +26,12 @@ import type { MailMessage } from '../../../core/mail/mail.provider';
 import { QUEUE_PROVIDER, type QueueProvider } from '../../../core/queue/queue.provider';
 import { TokenService, type IssuedTokens } from './token.service';
 import { TwoFactorService } from './two-factor.service';
-import { generateNumericCode, generateRawToken, sha256 } from '../support/crypto.util';
+import {
+  generateNumericCode,
+  generateRawToken,
+  sha256,
+  verifyPassword,
+} from '../support/crypto.util';
 import { verificationCodeEmail, type EmailLocale } from '../support/email-templates';
 import { toUserDto } from '../support/user.mapper';
 
@@ -231,9 +236,13 @@ export class AuthService {
     // Always pay the Argon2 cost so the response timing does not reveal whether
     // the email exists. For a missing/soft-deleted account we verify against a
     // fixed dummy hash and discard the result.
+    // `verifyPassword` also covers the account with no password at all — one
+    // that only signs in through a provider. It answers false and pays the same
+    // Argon2 cost, so social-only accounts are indistinguishable from wrong
+    // passwords both in the message below and on the clock.
     let passwordOk: boolean;
     if (user && !user.deletedAt) {
-      passwordOk = await argon2.verify(user.passwordHash, input.password);
+      passwordOk = await verifyPassword(user.passwordHash, input.password);
     } else {
       await argon2.verify(await DUMMY_PASSWORD_HASH, input.password);
       passwordOk = false;
@@ -318,7 +327,18 @@ export class AuthService {
     return `2fa:fails:${ticket}`;
   }
 
-  private async createLoginTicket(userId: string): Promise<string> {
+  /**
+   * Mint the short-lived, single-use ticket that stands between a proven first
+   * factor and a session.
+   *
+   * Public because password login is no longer the only way to arrive at the
+   * second factor: an OAuth callback reaches the same point, having proven the
+   * identity a different way, and must hand off to the same `2fa/verify` — same
+   * TTL, same burn-on-use, same per-ticket attempt counter. Reproducing the
+   * cache key elsewhere would be two implementations of one security control,
+   * and the copy is the one that stops getting the fixes.
+   */
+  async createLoginTicket(userId: string): Promise<string> {
     const ticket = generateRawToken();
     await this.cache.set(this.ticketKey(ticket), userId, LOGIN_TICKET_TTL);
     return ticket;

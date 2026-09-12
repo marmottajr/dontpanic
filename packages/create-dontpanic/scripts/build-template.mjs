@@ -7,7 +7,7 @@
 // So we rename those dotfiles to their dot-less form here; the CLI restores
 // them on scaffold. See restoreDotfiles() in src/index.ts.
 
-import { cpSync, mkdirSync, rmSync, readdirSync, statSync, renameSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 

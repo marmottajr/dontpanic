@@ -20,6 +20,7 @@ import { MailModule } from './infra/mail/mail.module';
 import { CaptchaModule } from './infra/captcha/captcha.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { OAuthModule } from './modules/auth/oauth/oauth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { TwoFactorGateGuard } from './modules/auth/guards/two-factor-gate.guard';
 import { TenantStatusGuard } from './modules/auth/guards/tenant-status.guard';
@@ -28,6 +29,7 @@ import { UsersModule } from './modules/users/users.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { FilesModule } from './modules/files/files.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -110,10 +112,12 @@ import { AppService } from './app.service';
     CaptchaModule,
     HealthModule,
     AuthModule,
+    OAuthModule,
     TenantsModule,
     UsersModule,
     FilesModule,
     AdminModule,
+    InvitationsModule,
     PlatformModule,
   ],
   controllers: [AppController],

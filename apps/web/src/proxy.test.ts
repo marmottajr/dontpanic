@@ -30,6 +30,23 @@ describe('proxy route gate', () => {
     }
   });
 
+  it('lets an invited stranger reach the accept screen, token and all', () => {
+    // The whole point of the link: no session yet, and the token is a path
+    // segment rather than a query param.
+    expect(locationOf(proxy(request('/invite/abc123token', false)))).toBeNull();
+  });
+
+  it('sends an already signed-in visitor away from an invite link', () => {
+    // Accepting is a registration: doing it under someone else's live session
+    // would build a second account behind the first one's cookies.
+    expect(locationOf(proxy(request('/invite/abc123token', true)))).toContain('/');
+  });
+
+  it('keeps the social signup completion screen pre-auth', () => {
+    // It runs on a one-shot ticket, before any account exists.
+    expect(locationOf(proxy(request('/signup/complete', false)))).toBeNull();
+  });
+
   it('sends a signed-in user away from the pre-auth pages', () => {
     expect(locationOf(proxy(request('/login', true)))).toContain('/');
   });

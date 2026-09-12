@@ -33,7 +33,7 @@ import type { MailMessage } from '../../../core/mail/mail.provider';
 import { QUEUE_PROVIDER, type QueueProvider } from '../../../core/queue/queue.provider';
 import { TwoFactorService } from '../../auth/services/two-factor.service';
 import { TokenService } from '../../auth/services/token.service';
-import { generateNumericCode, sha256 } from '../../auth/support/crypto.util';
+import { generateNumericCode, sha256, verifyPassword } from '../../auth/support/crypto.util';
 import { verificationCodeEmail, type EmailLocale } from '../../auth/support/email-templates';
 import { toUserDto } from '../../auth/support/user.mapper';
 
@@ -102,7 +102,7 @@ export class UsersService {
   ): Promise<void> {
     const user = await this.requireActiveUser(userId);
 
-    const currentOk = await argon2.verify(user.passwordHash, input.currentPassword);
+    const currentOk = await verifyPassword(user.passwordHash, input.currentPassword);
     if (!currentOk) {
       // Re-auth failure stays terse — leaks nothing about the account.
       throw new UnauthorizedException('Current password is incorrect');
@@ -204,12 +204,30 @@ export class UsersService {
     }
 
     // Re-prove identity: a live TOTP code OR the account password.
-    const accepted = input.code
-      ? await this.twoFactor.verifyTotp(user.twoFactorSecret, input.code)
-      : input.password
-        ? await argon2.verify(user.passwordHash, input.password)
-        : false;
-    if (!accepted) {
+    //
+    // Both checks always run, and neither is behind a condition the caller
+    // controls. The nested ternary this replaces let the request body decide
+    // *which* verification happened — it still verified, so it was not a hole,
+    // but it is the exact shape of one (CodeQL js/user-controlled-bypass), and
+    // one careless edit to either arm would have made it real. Evaluating both
+    // and OR-ing the results means the caller chooses what to present, never
+    // whether anything is checked.
+    //
+    // An absent field becomes an empty string rather than a skipped call, so
+    // both verifications run either way and the response time does not say
+    // which factor was offered.
+    //
+    // The `length > 0` is applied AFTER the call and to both arms alike. It
+    // states outright that nothing counts as proof of an empty submission,
+    // instead of inheriting that from otplib rejecting a malformed token and
+    // Argon2 rejecting an empty one — true today, but not a promise either
+    // library makes to us. It can only turn a true into a false, so it narrows
+    // the decision and can never widen it.
+    const code = input.code ?? '';
+    const password = input.password ?? '';
+    const totpOk = (await this.twoFactor.verifyTotp(user.twoFactorSecret, code)) && code.length > 0;
+    const passwordOk = (await verifyPassword(user.passwordHash, password)) && password.length > 0;
+    if (!totpOk && !passwordOk) {
       throw new UnauthorizedException('Verification failed');
     }
 
@@ -303,7 +321,7 @@ export class UsersService {
   ): Promise<void> {
     const user = await this.requireActiveUser(userId);
 
-    const passwordOk = await argon2.verify(user.passwordHash, input.password);
+    const passwordOk = await verifyPassword(user.passwordHash, input.password);
     if (!passwordOk) {
       throw new UnauthorizedException('Current password is incorrect');
     }

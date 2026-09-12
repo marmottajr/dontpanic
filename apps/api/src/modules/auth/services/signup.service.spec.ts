@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import { LEGAL_VERSIONS } from '@dontpanic/shared';
@@ -87,7 +87,7 @@ describe('SignupService', () => {
   let store: ReturnType<typeof makeStore>;
 
   /** Wires the doubles; `plan` is what `plan.findFirst` returns inside the tx. */
-  function setup(plan: Record<string, unknown> | null = null) {
+  function setup(plan: Record<string, unknown> | null = null, publicSignupEnabled = true) {
     store = makeStore(plan);
     prisma = {
       asSystem: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -99,7 +99,8 @@ describe('SignupService', () => {
       sendVerificationCode: jest.fn().mockResolvedValue(undefined),
       audit: jest.fn().mockResolvedValue(undefined),
     };
-    service = new SignupService(prisma, auth);
+    const config = { get: () => publicSignupEnabled } as never;
+    service = new SignupService(prisma, config, auth);
   }
 
   beforeEach(() => {
@@ -108,6 +109,20 @@ describe('SignupService', () => {
   });
 
   // --- what signup refuses ------------------------------------------------
+
+  // The flag is a deployment decision, and the API is the half that enforces
+  // it: the web app's NEXT_PUBLIC_SIGNUP_ENABLED can disagree or be stale, and
+  // a form rendering against a closed API must not be able to create anything.
+  it('refuses every public signup when registration is closed, before any work', async () => {
+    setup({ id: 'plan-1', name: 'Starter', trialDays: 30 }, false);
+
+    await expect(service.signup(INPUT, ctx)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.signup(INPUT, ctx)).rejects.toThrow('Public registration is closed.');
+    // Not one read, not one hash: the refusal happens before the database and
+    // before argon2, so a closed deployment is not also a free CPU burner.
+    expect(prisma.asSystem).not.toHaveBeenCalled();
+    expect(mockedArgon.hash).not.toHaveBeenCalled();
+  });
 
   it('refuses a reserved slug without touching the database', async () => {
     await expect(service.signup({ ...INPUT, slug: 'admin' }, ctx)).rejects.toBeInstanceOf(

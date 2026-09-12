@@ -1,4 +1,4 @@
-import { parseTrustProxy, validateEnv } from './env';
+import { parseOAuthProviders, parseTrustProxy, validateEnv } from './env';
 
 /** A minimal config that satisfies all required fields. */
 function baseConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -108,6 +108,97 @@ describe('validateEnv', () => {
       expect(() => validateEnv(baseConfig({ CAPTCHA_MIN_SCORE: '1.5' }))).toThrow(
         /CAPTCHA_MIN_SCORE/,
       );
+    });
+  });
+
+  describe('public signup', () => {
+    it('defaults to on, preserving the behaviour a clone has always had', () => {
+      expect(validateEnv(baseConfig()).PUBLIC_SIGNUP_ENABLED).toBe(true);
+    });
+
+    it("honours an explicit 'false'", () => {
+      expect(
+        validateEnv(baseConfig({ PUBLIC_SIGNUP_ENABLED: 'false' })).PUBLIC_SIGNUP_ENABLED,
+      ).toBe(false);
+    });
+  });
+
+  describe('invitations', () => {
+    it('defaults to a week, long enough to survive a holiday', () => {
+      expect(validateEnv(baseConfig()).INVITATION_TTL_HOURS).toBe(168);
+      expect(validateEnv(baseConfig()).INVITATION_MAX_RESENDS).toBe(5);
+    });
+
+    it('refuses a TTL beyond a month of hours', () => {
+      expect(() => validateEnv(baseConfig({ INVITATION_TTL_HOURS: 5000 }))).toThrow(
+        /INVITATION_TTL_HOURS/,
+      );
+    });
+  });
+
+  describe('oauth', () => {
+    const google = {
+      OAUTH_PROVIDERS: 'google',
+      OAUTH_CALLBACK_BASE_URL: 'http://localhost:4200/api',
+      OAUTH_GOOGLE_CLIENT_ID: 'id',
+      OAUTH_GOOGLE_CLIENT_SECRET: 'secret',
+    };
+
+    it('is off by default, so a fresh clone boots with no third-party keys', () => {
+      const env = validateEnv(baseConfig());
+      expect(env.OAUTH_PROVIDERS).toBe('');
+      expect(parseOAuthProviders(env.OAUTH_PROVIDERS)).toEqual([]);
+    });
+
+    it('accepts a fully configured provider', () => {
+      expect(() => validateEnv(baseConfig(google))).not.toThrow();
+    });
+
+    // The failure this prevents: a button renders on the login page for a
+    // provider the API cannot talk to, and the user meets a 404 instead of a
+    // sign-in. Better to never start.
+    it('refuses a listed provider with a missing credential', () => {
+      const cfg = baseConfig({ ...google, OAUTH_GOOGLE_CLIENT_SECRET: '' });
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_GOOGLE_CLIENT_SECRET/);
+      expect(() => validateEnv(cfg)).toThrow(/google/);
+    });
+
+    it("names every one of Apple's four required keys", () => {
+      const cfg = baseConfig({
+        OAUTH_PROVIDERS: 'apple',
+        OAUTH_CALLBACK_BASE_URL: 'http://localhost:4200/api',
+      });
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_APPLE_CLIENT_ID/);
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_APPLE_TEAM_ID/);
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_APPLE_KEY_ID/);
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_APPLE_PRIVATE_KEY/);
+    });
+
+    it('requires a callback base URL once any provider is on', () => {
+      const cfg = baseConfig({ ...google, OAUTH_CALLBACK_BASE_URL: '' });
+      expect(() => validateEnv(cfg)).toThrow(/OAUTH_CALLBACK_BASE_URL/);
+    });
+
+    // A typo here would otherwise disable, in silence, the button the operator
+    // believed they had switched on.
+    it('rejects a name that is not a provider', () => {
+      const cfg = baseConfig({ ...google, OAUTH_PROVIDERS: 'google,gogle' });
+      expect(() => validateEnv(cfg)).toThrow(/unknown provider "gogle"/);
+    });
+
+    describe('parseOAuthProviders', () => {
+      it('trims, lowercases and de-duplicates', () => {
+        expect(parseOAuthProviders(' Google , github ,google ')).toEqual(['google', 'github']);
+      });
+
+      it('treats an empty or undefined list as nothing enabled', () => {
+        expect(parseOAuthProviders('')).toEqual([]);
+        expect(parseOAuthProviders(undefined)).toEqual([]);
+      });
+
+      it('drops unknown names (validateEnv is what refuses them loudly)', () => {
+        expect(parseOAuthProviders('google,nope')).toEqual(['google']);
+      });
     });
   });
 

@@ -14,6 +14,8 @@ import { slugify } from '@/lib/masks';
 import { ApiError } from '@/lib/api';
 import { Captcha, type CaptchaHandle } from '@/components/captcha';
 import { captchaEnabled } from '@/lib/captcha';
+import { signupEnabled } from '@/lib/auth-config';
+import { OAuthButtons } from '@/components/oauth-buttons';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +83,36 @@ export default function SignupPage() {
       toast.error(tErr('generic'));
     }
   });
+
+  /**
+   * Registration closed. The form is not rendered at all rather than rendered
+   * and rejected: the API answers 403 to every submit when its own
+   * `SIGNUP_ENABLED` is off, and a form that can only fail is worse than an
+   * honest sentence. This half must agree with the API's — see
+   * `@/lib/auth-config`.
+   *
+   * No humour here. Someone who cannot get in wants to know what to do next,
+   * not a joke about it.
+   */
+  if (!signupEnabled) {
+    return (
+      <Card className="animate-in fade-in zoom-in-95 duration-300">
+        <CardHeader className="gap-3">
+          <Brand size="md" className="mb-1" />
+          <CardTitle className="font-display text-2xl">{t('closedTitle')}</CardTitle>
+          <CardDescription>{t('closedBody')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{t('closedInvite')}</p>
+        </CardContent>
+        <CardFooter>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/login">{t('signin')}</Link>
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
 
   return (
     <Card className="animate-in fade-in zoom-in-95 duration-300">
@@ -210,6 +242,11 @@ export default function SignupPage() {
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
             {t('submit')}
           </Button>
+
+          {/* `intent=signup`: a brand-new identity coming back from the provider
+              means a company to name, not the `no_account` error login gets. */}
+          <OAuthButtons intent="signup" className="w-full" />
+
           <p className="text-center text-sm text-muted-foreground">
             {t('hasAccount')}{' '}
             <Link

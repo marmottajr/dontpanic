@@ -1,6 +1,6 @@
 {
   "name": "create-dontpanic",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Scaffold a new DontPanic app — a production-grade full-stack boilerplate. Don't Panic.",
   "type": "module",
   "bin": {

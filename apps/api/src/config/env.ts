@@ -110,6 +110,52 @@ export const envSchema = z.object({
   // only bot defence on the login form. Flip to true to favour availability.
   CAPTCHA_FAIL_OPEN: boolish(false),
 
+  // --- who may get in ---
+  // Whether the public signup form works at all. On, a stranger can create a
+  // company; off, the only ways in are an invitation and the seed — which is
+  // what an internal deployment or a sales-led product wants.
+  //
+  // Default `true` preserves the behaviour a clone has always had, and keeps a
+  // fresh checkout usable without running the seed. It is a deployment
+  // decision, not a safe default: it is on the production checklist for that
+  // reason. NEXT_PUBLIC_SIGNUP_ENABLED on the web side must agree, or the form
+  // renders and every submit answers 403.
+  PUBLIC_SIGNUP_ENABLED: boolish(true),
+  /// How long a mailed invitation stays good. Long enough to survive a weekend
+  /// and a holiday; short enough that a forwarded mailbox is not a permanent
+  /// key to the company.
+  INVITATION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(168),
+  /// Resends allowed per invitation, total. Stops "resend" becoming a way to
+  /// mail an address repeatedly using our reputation.
+  INVITATION_MAX_RESENDS: z.coerce.number().int().min(0).max(20).default(5),
+
+  // --- social sign-in ---
+  // The list is the single source of truth for what is on: an empty value means
+  // no social buttons anywhere and every /auth/oauth route answers 404. Listing
+  // a provider without its credentials fails the boot (see validateEnv) rather
+  // than half-enabling it — the same rule captcha follows, for the same reason.
+  //
+  // NEXT_PUBLIC_OAUTH_PROVIDERS on the web side must list the same names. If it
+  // lists more, the extra button leads to a 404 instead of failing silently.
+  OAUTH_PROVIDERS: z.string().default(''),
+  /// Where providers send the browser back. Must match the redirect URI
+  /// registered with each provider, exactly, including scheme and trailing path.
+  OAUTH_CALLBACK_BASE_URL: z.string().default(''),
+
+  OAUTH_GOOGLE_CLIENT_ID: z.string().default(''),
+  OAUTH_GOOGLE_CLIENT_SECRET: z.string().default(''),
+
+  /// Apple's "Services ID" (e.g. dev.dontpanic.web), not the App ID.
+  OAUTH_APPLE_CLIENT_ID: z.string().default(''),
+  OAUTH_APPLE_TEAM_ID: z.string().default(''),
+  OAUTH_APPLE_KEY_ID: z.string().default(''),
+  /// The .p8 private key, PEM including the BEGIN/END lines. Newlines may be
+  /// written as literal `\n`, which is what most secret stores hand back.
+  OAUTH_APPLE_PRIVATE_KEY: z.string().default(''),
+
+  OAUTH_GITHUB_CLIENT_ID: z.string().default(''),
+  OAUTH_GITHUB_CLIENT_SECRET: z.string().default(''),
+
   // Which upstream hops may dictate the client IP via X-Forwarded-For. This is
   // what the rate limiter buckets on, so trusting the wrong thing makes every
   // limit above bypassable. Deployment-specific — see parseTrustProxy.
@@ -121,6 +167,38 @@ export const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
+
+/** The providers named in OAUTH_PROVIDERS, normalised and de-duplicated. */
+export const OAUTH_PROVIDER_NAMES = ['google', 'apple', 'github'] as const;
+export type OAuthProviderName = (typeof OAUTH_PROVIDER_NAMES)[number];
+
+export function parseOAuthProviders(raw: string | undefined): OAuthProviderName[] {
+  const names = (raw ?? '')
+    .split(',')
+    .map((n) => n.trim().toLowerCase())
+    .filter(Boolean);
+  return [...new Set(names)].filter((n): n is OAuthProviderName =>
+    (OAUTH_PROVIDER_NAMES as readonly string[]).includes(n),
+  );
+}
+
+/**
+ * The credentials each provider cannot work without.
+ *
+ * Kept as data rather than a chain of ifs so that adding a provider is one
+ * entry here plus one adapter — and so the boot-time check below can never
+ * drift from the list of providers that exist.
+ */
+const OAUTH_REQUIRED_KEYS: Record<OAuthProviderName, readonly (keyof Env)[]> = {
+  google: ['OAUTH_GOOGLE_CLIENT_ID', 'OAUTH_GOOGLE_CLIENT_SECRET'],
+  apple: [
+    'OAUTH_APPLE_CLIENT_ID',
+    'OAUTH_APPLE_TEAM_ID',
+    'OAUTH_APPLE_KEY_ID',
+    'OAUTH_APPLE_PRIVATE_KEY',
+  ],
+  github: ['OAUTH_GITHUB_CLIENT_ID', 'OAUTH_GITHUB_CLIENT_SECRET'],
+};
 
 /**
  * Translate TRUST_PROXY into Fastify's `trustProxy` option.
@@ -167,5 +245,41 @@ export function validateEnv(config: Record<string, unknown>): Env {
         `  - CAPTCHA_SECRET_KEY: required when CAPTCHA_DRIVER is "${parsed.data.CAPTCHA_DRIVER}"`,
     );
   }
+
+  // A provider listed but not configured would render a button that leads
+  // nowhere. Failing the boot is the only version of this the operator finds
+  // out about before a user does.
+  const enabled = parseOAuthProviders(parsed.data.OAUTH_PROVIDERS);
+  const oauthProblems: string[] = [];
+  for (const provider of enabled) {
+    for (const key of OAUTH_REQUIRED_KEYS[provider]) {
+      if (!parsed.data[key]) {
+        oauthProblems.push(`  - ${key}: required when OAUTH_PROVIDERS includes "${provider}"`);
+      }
+    }
+  }
+  // The callback URL has no sensible default: it must match, character for
+  // character, what was registered with each provider.
+  if (enabled.length > 0 && !parsed.data.OAUTH_CALLBACK_BASE_URL) {
+    oauthProblems.push('  - OAUTH_CALLBACK_BASE_URL: required when OAUTH_PROVIDERS is not empty');
+  }
+  // Naming something that is not a provider is a typo, and a typo here silently
+  // disables the button the operator thought they had turned on.
+  const unknown = (parsed.data.OAUTH_PROVIDERS || '')
+    .split(',')
+    .map((n) => n.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((n) => !(OAUTH_PROVIDER_NAMES as readonly string[]).includes(n));
+  for (const name of unknown) {
+    oauthProblems.push(
+      `  - OAUTH_PROVIDERS: unknown provider "${name}" (known: ${OAUTH_PROVIDER_NAMES.join(', ')})`,
+    );
+  }
+  if (oauthProblems.length > 0) {
+    throw new Error(
+      "Invalid environment variables. Don't Panic, just fix these:\n" + oauthProblems.join('\n'),
+    );
+  }
+
   return parsed.data;
 }

@@ -22,6 +22,7 @@ import {
   isPlatformDenied,
   useChangeTenantPlan,
   useCreatePlan,
+  useCreateTenant,
   useExtendTrial,
   usePlatformAccess,
   usePlatformDeniedRedirect,
@@ -260,6 +261,27 @@ describe('platform mutations', () => {
       method: 'POST',
       body: { planId: 'p2' },
     });
+  });
+
+  it('creates a company by POSTing to the same collection it lists', async () => {
+    const input = {
+      companyName: 'Sirius Cybernetics',
+      slug: 'sirius-cybernetics',
+      email: 'contato@sirius.example',
+      status: 'TRIAL' as const,
+      adminEmail: 'arthur@sirius.example',
+      adminName: 'Arthur Dent',
+      sendInvitation: true,
+    };
+    const { qc, wrapper } = harness();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    apiMock.mockResolvedValue({ tenant: { id: 't1' }, invitationSent: true });
+
+    const { result } = renderHook(() => useCreateTenant(), { wrapper });
+    result.current.mutate(input);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['platform'] }));
+    expect(apiMock).toHaveBeenCalledWith(PLATFORM_ROUTES.tenants, { method: 'POST', body: input });
   });
 
   it('creates a plan with POST and updates one with PATCH', async () => {

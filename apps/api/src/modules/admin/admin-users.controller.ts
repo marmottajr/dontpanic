@@ -19,11 +19,14 @@ import { CurrentUser, type AuthUser } from '../../common/decorators/current-user
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AdminUsersService, type AdminContext } from './admin-users.service';
-import { AdminCreateUserDto, PaginationQueryDto, UpdateRoleDto } from './admin.dto';
+import { PaginationQueryDto, UpdateRoleDto } from './admin.dto';
 
 /**
  * Admin user administration. Every route requires the ADMIN role — JwtAuthGuard
  * (global) authenticates, then RolesGuard + @Roles('ADMIN') authorise.
+ *
+ * There is no POST here: a new colleague arrives through
+ * `POST /admin/invitations`, never through an admin choosing their password.
  */
 @ApiTags('admin')
 @Controller('admin/users')
@@ -40,17 +43,6 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'List users (paginated, searchable by email/name)' })
   async list(@Query() query: PaginationQueryDto): Promise<AdminUserList> {
     return this.adminUsers.list(query);
-  }
-
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a user (created already email-verified)' })
-  async create(
-    @CurrentUser() admin: AuthUser,
-    @Body() dto: AdminCreateUserDto,
-    @Req() req: FastifyRequest,
-  ): Promise<AdminUser> {
-    return this.adminUsers.create(admin.id, dto, this.ctx(req));
   }
 
   @Patch(':id/role')

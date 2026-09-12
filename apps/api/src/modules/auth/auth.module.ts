@@ -54,6 +54,10 @@ import { ProfilePermissionsService } from './services/profile-permissions.servic
     TwoFactorService,
     TokenService,
     CookieService,
+    // Exported for the OAuth module, which hands off to the same second-factor
+    // step a password login uses. Sharing the service is the point: a second
+    // implementation of the login ticket would be a second thing to keep right.
+    AuthService,
   ],
 })
 export class AuthModule {}

@@ -101,14 +101,19 @@ export type AdminUserList = z.infer<typeof adminUserListSchema>;
 export const updateRoleSchema = z.object({ role: RoleEnum });
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
 
-/** Admin-created account: the admin vouches for it, so it's created verified. */
-export const adminCreateUserSchema = z.object({
-  email: z.string().email(),
-  name: z.string().min(1).max(120),
-  password: passwordSchema,
-  role: RoleEnum,
-});
-export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>;
+/**
+ * There is deliberately no "admin creates a user with a password" contract.
+ *
+ * It used to be here, and it was the wrong shape twice over: the administrator
+ * chose someone else's credential (so two people knew it, and the real owner
+ * had no way to be the only one who did), and the account was written
+ * `emailVerified: true` on the administrator's word — which is not evidence
+ * that the address exists, let alone that it belongs to the person named.
+ *
+ * Adding someone to a company is `createInvitationSchema` in ./invitation. The
+ * invitee sets their own password, and accepting the mailed token is what
+ * proves the address. See `POST /admin/invitations`.
+ */
 
 /** A single audit-log entry as exposed to the data subject (LGPD export). */
 export const auditLogEntrySchema = z.object({

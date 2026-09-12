@@ -79,3 +79,22 @@ export function permissionsForProfile(code: string): PermissionDto[] {
   }
   return rows;
 }
+
+/**
+ * A permission profile as the invite and user-admin screens need it.
+ *
+ * Deliberately not the whole row: the picker needs something to show and
+ * something to send, and shipping the permission matrix with it would put the
+ * company's whole access table on the wire every time a dialog opens.
+ *
+ * `system` is here because the UI has to tell the profiles that ship with every
+ * company apart from the ones this company invented — the first cannot be
+ * deleted, and a list that hides the difference invites someone to try.
+ */
+export const profileOptionSchema = z.object({
+  id: z.string().uuid(),
+  code: z.string(),
+  name: z.string(),
+  system: z.boolean(),
+});
+export type ProfileOption = z.infer<typeof profileOptionSchema>;

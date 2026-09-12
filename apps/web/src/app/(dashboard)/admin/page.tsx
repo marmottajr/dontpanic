@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CreateUserDialog } from '@/components/admin/create-user-dialog';
+import { InviteUserDialog } from '@/components/admin/invite-user-dialog';
+import { InvitationsTable } from '@/components/admin/invitations-table';
 
 export default function AdminPage() {
   const t = useTranslations('admin');
@@ -25,7 +26,10 @@ export default function AdminPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
-  const [creating, setCreating] = useState(false);
+  // "Create user with a password" is gone from the API: an administrator who
+  // types someone else's first credential both knows it and proves nothing
+  // about the address. Adding a colleague is an invitation now.
+  const [inviting, setInviting] = useState(false);
 
   // Client-side gate; the API also enforces ADMIN (403) on every endpoint.
   useEffect(() => {
@@ -105,7 +109,7 @@ export default function AdminPage() {
             {t('search')}
           </Button>
         </form>
-        <Button onClick={() => setCreating(true)}>{t('newUser')}</Button>
+        <Button onClick={() => setInviting(true)}>{t('inviteUser')}</Button>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border">
@@ -210,6 +214,8 @@ export default function AdminPage() {
         </div>
       )}
 
+      <InvitationsTable />
+
       <ConfirmDialog
         open={Boolean(deleting)}
         onOpenChange={(o) => !o && setDeleting(null)}
@@ -222,7 +228,7 @@ export default function AdminPage() {
         onConfirm={() => deleting && del.mutate(deleting.id)}
       />
 
-      <CreateUserDialog open={creating} onOpenChange={setCreating} />
+      <InviteUserDialog open={inviting} onOpenChange={setInviting} />
     </div>
   );
 }

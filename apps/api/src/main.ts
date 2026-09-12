@@ -15,6 +15,7 @@ import fastifyMultipart from '@fastify/multipart';
 import type { preHandlerHookHandler } from 'fastify';
 import { AppModule } from './app.module';
 import { parseTrustProxy, type Env } from './config/env';
+import { registerOAuthFormPostParser, skipsCsrf } from './modules/auth/oauth/oauth-form-post';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -78,8 +79,16 @@ async function bootstrap(): Promise<void> {
   fastify.addHook('preHandler', (req, reply, done) => {
     const m = req.method.toUpperCase();
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return done();
+    // Sign in with Apple posts its callback from appleid.apple.com, which has
+    // no way to carry our double-submit token. That flow is guarded by the
+    // OAuth `state` cookie instead — see skipsCsrf for why that is equivalent
+    // and why the exemption is one method on one path.
+    if (skipsCsrf(m, req.url)) return done();
     return csrfProtection.call(fastify, req, reply, done);
   });
+
+  // Apple's form_post body. Every other route keeps answering 415 to urlencoded.
+  registerOAuthFormPostParser(fastify);
 
   // Multipart uploads (avatars). 5MB cap enforced at the parser, before sharp.
   await app.register(fastifyMultipart, {

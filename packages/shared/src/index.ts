@@ -8,5 +8,7 @@ export * from './primitives';
 export * from './user';
 export * from './auth';
 export * from './tenant';
+export * from './invitation';
+export * from './oauth';
 export * from './permissions';
 export * from './legal';

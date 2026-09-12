@@ -1,7 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
-import type { Paginated, PlatformStatsDto, PlatformTenantDto } from '@dontpanic/shared';
+import type {
+  Paginated,
+  PlatformCreateTenantResponse,
+  PlatformStatsDto,
+  PlatformTenantDto,
+} from '@dontpanic/shared';
 import { CurrentUser, type AuthUser } from '../../common/decorators/current-user.decorator';
 import { SuperAdminGuard } from './guards/superadmin.guard';
 import { PlatformTenantsService } from './services/platform-tenants.service';
@@ -9,6 +14,7 @@ import { PlatformStatsService } from './services/platform-stats.service';
 import {
   ChangePlanDto,
   ExtendTrialDto,
+  PlatformCreateTenantDto,
   PlatformTenantListQueryDto,
   SuspendTenantDto,
 } from './dto/platform.dto';
@@ -48,6 +54,21 @@ export class PlatformController {
   @ApiOperation({ summary: 'One company in detail' })
   async detail(@Param('id') id: string): Promise<PlatformTenantDto> {
     return this.tenants.get(id);
+  }
+
+  /**
+   * Creates a company on a customer's behalf. Note what the response does not
+   * contain: no password, no user — the first administrator is invited, and
+   * `invitationSent` tells the panel whether the mail actually went out.
+   */
+  @Post('tenants')
+  @ApiOperation({ summary: 'Create a company and invite its first administrator' })
+  async create(
+    @Body() dto: PlatformCreateTenantDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
+  ): Promise<PlatformCreateTenantResponse> {
+    return this.tenants.create(dto, this.actor(user, req));
   }
 
   @Post('tenants/:id/suspend')

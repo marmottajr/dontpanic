@@ -1,20 +1,8 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import type { Prisma, User } from '@prisma/client';
-import type {
-  AdminCreateUserInput,
-  AdminUser,
-  AdminUserList,
-  PaginationQuery,
-  Role,
-} from '@dontpanic/shared';
+import type { AdminUser, AdminUserList, PaginationQuery, Role } from '@dontpanic/shared';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../auth/services/token.service';
 
@@ -29,6 +17,13 @@ export interface AdminContext {
  * gated by RolesGuard + @Roles('ADMIN') — the activation of the RBAC machinery.
  * Self-targeting destructive actions (role, lock, delete) are blocked so an admin
  * can't lock itself out, and every mutation is written to the audit log.
+ *
+ * Creating a user is deliberately absent. It used to live here as "the admin
+ * types a password for someone else", which hands one person a credential that
+ * belongs to another and takes the admin's word that the address is real. Both
+ * are fixed by the invitation flow (InvitationsModule): the invitee chooses
+ * their own password, and clicking a mailed link is what proves the mailbox is
+ * theirs. Adding a `create` back here would reopen both holes at once.
  */
 @Injectable()
 export class AdminUsersService {
@@ -85,31 +80,6 @@ export class AdminUsersService {
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
-  }
-
-  async create(
-    adminId: string,
-    input: AdminCreateUserInput,
-    ctx: AdminContext,
-  ): Promise<AdminUser> {
-    const email = input.email.toLowerCase();
-    // Reject any existing email, including soft-deleted rows that still hold the
-    // unique index (a soft-deleted account keeps its address) — avoids a 500.
-    const existing = await this.prisma.db.user.findUnique({ where: { email } });
-    if (existing) {
-      throw new ConflictException('An account with this email already exists');
-    }
-
-    const passwordHash = await argon2.hash(input.password);
-    const user = await this.prisma.db.user.create({
-      data: { email, name: input.name, passwordHash, role: input.role, emailVerified: true },
-    });
-    await this.audit('admin.user_created', adminId, ctx, {
-      targetId: user.id,
-      email,
-      role: user.role,
-    });
-    return this.toAdminUser(user);
   }
 
   async setRole(
