@@ -50,18 +50,21 @@ Zod, então api e web nunca divergem. Mudou o contrato? Edite em `packages/share
 O domínio depende de **interfaces (ports)**; o que é externo é um **adapter** plugável por env.
 Trocar de provider = trocar uma variável, sem tocar na lógica.
 
-| Recurso | Port                   | Adapters                               | Env              |
-| ------- | ---------------------- | -------------------------------------- | ---------------- |
-| Storage | `StorageProvider`      | `s3` (AWS/MinIO/R2), `local`           | `STORAGE_DRIVER` |
-| E-mail  | `MailProvider`         | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
-| Cache   | `CacheProvider`        | `redis`, `memory`                      | `CACHE_DRIVER`   |
-| Banco   | repos + Prisma adapter | `postgresql`, `mysql`, `sqlite`        | `DB_PROVIDER`    |
-| Captcha | `CaptchaProvider`      | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
-| Jobs    | `QueueProvider`        | `bullmq`, `memory`                     | `QUEUE_DRIVER`   |
+| Recurso | Port              | Adapters                               | Env              |
+| ------- | ----------------- | -------------------------------------- | ---------------- |
+| Storage | `StorageProvider` | `s3` (AWS/MinIO/R2), `local`           | `STORAGE_DRIVER` |
+| E-mail  | `MailProvider`    | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
+| Cache   | `CacheProvider`   | `redis`, `memory`                      | `CACHE_DRIVER`   |
+| Captcha | `CaptchaProvider` | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
+| Jobs    | `QueueProvider`   | `bullmq`, `memory`                     | `QUEUE_DRIVER`   |
 
 - Adapters ficam em `apps/api/src/infra/**`; ports em `apps/api/src/core/**`.
-- Banco usa **Prisma 7 driver adapters** (`@prisma/adapter-pg` p/ Postgres). Trocar o banco =
-  trocar o adapter + o `provider` em `prisma/schema.prisma`.
+- **O banco não está nessa tabela, e isso é deliberado: é Postgres, sempre.** O isolamento
+  entre empresas é Row Level Security escrito em PL/pgSQL (`set_config`, `current_setting`,
+  `pg_roles`, `FORCE ROW LEVEL SECURITY`) e o cliente é `@prisma/adapter-pg` via Prisma 7
+  driver adapters. Havia um `DB_PROVIDER` oferecendo `mysql` e `sqlite`; ele era declarado e
+  **nunca lido**, então escolher outro banco não trocava nada — subia a aplicação com o
+  isolamento ausente e sem erro nenhum. O pior tipo de opção é a que parece funcionar.
 - Em teste, use `memory` / `console` / `local` para rodar sem Docker.
 
 ---

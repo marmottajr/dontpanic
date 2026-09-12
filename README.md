@@ -247,7 +247,6 @@ env. Trocar de provider = trocar uma variável, sem tocar na lógica. Ports vive
 | Storage | `StorageProvider` | `s3` (AWS/MinIO/R2), `local`           | `STORAGE_DRIVER` |
 | E-mail  | `MailProvider`    | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
 | Cache   | `CacheProvider`   | `redis`, `memory`                      | `CACHE_DRIVER`   |
-| Banco   | repos + Prisma    | `postgresql`, `mysql`, `sqlite`        | `DB_PROVIDER`    |
 | Captcha | `CaptchaProvider` | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
 
 Em teste, `memory` / `console` / `local` rodam sem Docker.
@@ -546,7 +545,6 @@ an env var. Swap a provider by swapping one variable — no logic touched. Ports
 | Storage  | `StorageProvider` | `s3` (AWS/MinIO/R2), `local`           | `STORAGE_DRIVER` |
 | Mail     | `MailProvider`    | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
 | Cache    | `CacheProvider`   | `redis`, `memory`                      | `CACHE_DRIVER`   |
-| Database | repos + Prisma    | `postgresql`, `mysql`, `sqlite`        | `DB_PROVIDER`    |
 | Captcha  | `CaptchaProvider` | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
 
 In tests, `memory` / `console` / `local` run without Docker.

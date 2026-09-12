@@ -30,8 +30,10 @@ jobs:
         run: pnpm --filter @dontpanic/shared build
 
       # Opens/updates a "Version Packages" PR that bumps versions and writes
-      # changelogs from the changesets. Publishing is NOT done here — it happens
-      # in publish-create-dontpanic.yml when a `v*` tag is pushed.
+      # changelogs from the changesets. Nothing is published from this repository:
+      # the `create-dontpanic` installer now lives in marmottajr/dontpanic-create
+      # and publishes from there on its own `v*` tags. Keeping a publish step here
+      # would give one npm package two publishers, and the last run would win.
       - name: Changesets — open/refresh the version PR
         uses: changesets/action@v2
         with:
