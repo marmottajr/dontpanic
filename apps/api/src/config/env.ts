@@ -46,7 +46,6 @@ export const envSchema = z.object({
   STORAGE_DRIVER: z.enum(['s3', 'local']).default('s3'),
   MAIL_DRIVER: z.enum(['smtp', 'ses', 'console']).default('smtp'),
   CACHE_DRIVER: z.enum(['redis', 'memory']).default('redis'),
-  DB_PROVIDER: z.enum(['postgresql', 'mysql', 'sqlite']).default('postgresql'),
 
   // --- mail ---
   MAIL_HOST: z.string().default('localhost'),
