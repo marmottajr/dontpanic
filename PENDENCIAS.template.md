@@ -42,6 +42,18 @@ Checklist herdado do boilerplate. Nenhum destes é opcional; risque conforme con
       restritivo de propósito; errado para mais, o rate limit vira burlável. Veja a tabela por
       plataforma no `.env.example`.
 - [ ] **Ligar o captcha** (`CAPTCHA_DRIVER` + chaves), nos dois lados — API e `NEXT_PUBLIC_*`.
+- [ ] **Decidir `PUBLIC_SIGNUP_ENABLED` conscientemente.** O default `true` preserva o comportamento
+      histórico do boilerplate — **não** é um default seguro. Se ninguém de fora deve criar empresa,
+      desligue nos dois lados (`PUBLIC_SIGNUP_ENABLED` e `NEXT_PUBLIC_SIGNUP_ENABLED`); em desacordo,
+      o formulário renderiza e todo submit responde 403. Com o signup desligado, convite e seed são
+      as únicas entradas.
+- [ ] **Configurar o login social nos dois lados, ou deixá-lo desligado de propósito.**
+      `OAUTH_PROVIDERS` vazio significa nenhum botão e 404 nas rotas — decisão válida, desde que seja
+      decisão. Ligando, `NEXT_PUBLIC_OAUTH_PROVIDERS` lista os mesmos nomes, e a API recusa subir se
+      um provider listado estiver sem credencial.
+- [ ] **Conferir `OAUTH_CALLBACK_BASE_URL` contra o redirect URI registrado em cada provider.**
+      Caractere a caractere: esquema, host, porta, caminho, barra final. O provedor compara a string,
+      e a divergência é rejeitada lá — numa página de erro que a aplicação nunca vê.
 - [ ] **Gerar segredos novos** para `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` e `CSRF_SECRET`.
       Nunca os do `.env.example`.
 - [ ] **Preencher os dados do operador** em `components/legal/company.ts` e revisar termos e

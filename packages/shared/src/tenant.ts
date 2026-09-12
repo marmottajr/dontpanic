@@ -214,6 +214,54 @@ export const platformTenantDtoSchema = tenantDtoSchema.extend({
 });
 export type PlatformTenantDto = z.infer<typeof platformTenantDtoSchema>;
 
+/**
+ * The operator creating a company on someone's behalf — a sale closed over the
+ * phone, an onboarding done for a customer who will never see the signup form.
+ *
+ * Two things separate it from `signupSchema`, and both are the point:
+ *
+ *  - **No password.** The operator names the first administrator; the system
+ *    invites them. Nobody at the vendor ever knows a customer's credential, and
+ *    the address gets proven by the acceptance instead of being taken on faith.
+ *  - **The commercial terms are inputs.** Plan, status and trial length are
+ *    decisions the operator is making here, not defaults derived from whichever
+ *    plan happens to carry `isDefault`.
+ */
+export const platformCreateTenantSchema = z.object({
+  companyName: z.string().min(2).max(150),
+  slug: tenantSlugSchema,
+  legalName: z.string().max(150).nullish(),
+  taxId: z.string().max(40).nullish(),
+  /** Billing/contact address for the company itself, not the administrator's. */
+  email: z.string().email().max(255),
+  phone: z.string().max(30).nullish(),
+  planId: z.string().uuid().nullish(),
+  /** Only the two a company can legitimately start life in. */
+  status: z.enum(['TRIAL', 'ACTIVE']).default('TRIAL'),
+  /** Overrides the plan's own `trialDays`. Ignored unless status is TRIAL. */
+  trialDays: z.number().int().min(0).max(365).optional(),
+  locale: z.string().max(10).optional(),
+  currency: z.string().length(3).optional(),
+  timezone: z.string().max(60).optional(),
+  /** The first administrator, who receives the invitation. */
+  adminEmail: z.string().email().max(255),
+  adminName: z.string().min(2).max(150),
+  /**
+   * Create the company without mailing anyone. For imports and for a customer
+   * being set up ahead of a kickoff call — the invite can be sent later from
+   * the company's detail page.
+   */
+  sendInvitation: z.boolean().default(true),
+});
+export type PlatformCreateTenantInput = z.infer<typeof platformCreateTenantSchema>;
+
+/** What the operator gets back: the company, and whether the invite went out. */
+export const platformCreateTenantResponseSchema = z.object({
+  tenant: platformTenantDtoSchema,
+  invitationSent: z.boolean(),
+});
+export type PlatformCreateTenantResponse = z.infer<typeof platformCreateTenantResponseSchema>;
+
 export const upsertPlanSchema = z.object({
   code: z
     .string()

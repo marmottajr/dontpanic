@@ -1,6 +1,6 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
-import type { PlatformTenantListQuery } from '@dontpanic/shared';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { PlatformCreateTenantInput, PlatformTenantListQuery } from '@dontpanic/shared';
 import { makePrismaMock, type PrismaMock } from '../../../../test/prisma-mock';
 import type { PrismaService } from '../../../infra/prisma/prisma.service';
 import { TenantContext } from '../../../infra/tenancy/tenant-context';
@@ -8,6 +8,7 @@ import type { PlatformActor } from '../support/platform-scope';
 import { PlatformTenantsService } from './platform-tenants.service';
 
 const ACTOR: PlatformActor = { id: 'operator-1', ip: '10.0.0.1', userAgent: 'jest' };
+const EXPIRES = new Date('2026-09-18T12:00:00.000Z');
 const NOW = new Date('2026-09-11T12:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -52,8 +53,22 @@ const query = (overrides: Partial<PlatformTenantListQuery> = {}): PlatformTenant
   ...overrides,
 });
 
+const createInput = (
+  overrides: Partial<PlatformCreateTenantInput> = {},
+): PlatformCreateTenantInput => ({
+  companyName: 'Megadodo Publications',
+  slug: 'megadodo',
+  email: 'billing@megadodo.test',
+  adminEmail: 'ford@megadodo.test',
+  adminName: 'Ford Prefect',
+  status: 'TRIAL',
+  sendInvitation: true,
+  ...overrides,
+});
+
 describe('PlatformTenantsService', () => {
   let prisma: PrismaMock;
+  let invitations: { issue: jest.Mock; dispatchInvitationEmail: jest.Mock };
   let service: PlatformTenantsService;
 
   beforeEach(() => {
@@ -62,12 +77,34 @@ describe('PlatformTenantsService', () => {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(makeTenant()),
+        create: jest.fn().mockResolvedValue(makeTenant()),
         update: jest.fn(),
       },
-      plan: { findUnique: jest.fn().mockResolvedValue(null) },
+      user: { findUnique: jest.fn().mockResolvedValue(null) },
+      // `provisionTenant` writes these; the double just has to hand back rows
+      // with ids, since the ADMIN profile's id is what the invitation carries.
+      profile: {
+        create: jest.fn(async ({ data }: { data: { code: string } }) => ({
+          id: `profile-${data.code.toLowerCase()}`,
+          ...data,
+        })),
+      },
+      permission: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      plan: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     });
-    service = new PlatformTenantsService(prisma as unknown as PrismaService);
+    invitations = {
+      issue: jest
+        .fn()
+        .mockResolvedValue({ invitationId: 'inv-1', rawToken: 'raw-token', expiresAt: EXPIRES }),
+      dispatchInvitationEmail: jest.fn(),
+    };
+    service = new PlatformTenantsService(prisma as unknown as PrismaService, invitations as never);
   });
 
   describe('scope', () => {
@@ -206,6 +243,300 @@ describe('PlatformTenantsService', () => {
     it('404s on an unknown or soft-deleted company', async () => {
       prisma.tenant.findFirst.mockResolvedValue(null);
       await expect(service.get('ghost')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('create', () => {
+    function uniqueViolation(target?: string): Prisma.PrismaClientKnownRequestError {
+      return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: target ? { target } : undefined,
+      });
+    }
+
+    it('creates the company, its profiles, the invitation and the audit row', async () => {
+      prisma.plan.findFirst.mockResolvedValue({ id: 'plan-1', name: 'Pro', trialDays: 30 });
+      prisma.tenant.create.mockResolvedValue(makeTenant({ status: 'TRIAL', planId: 'plan-1' }));
+      prisma.tenant.findUniqueOrThrow.mockResolvedValue(
+        makeTenant({
+          status: 'TRIAL',
+          planId: 'plan-1',
+          plan: { name: 'Pro' },
+          _count: { users: 0 },
+        }),
+      );
+
+      const result = await service.create(
+        createInput({ planId: 'plan-1', legalName: 'Megadodo Ltd', taxId: '42', phone: '+55 11' }),
+        ACTOR,
+      );
+
+      // The company itself, with the commercial terms the operator chose.
+      expect(prisma.tenant.create.mock.calls[0][0].data).toMatchObject({
+        slug: 'megadodo',
+        name: 'Megadodo Publications',
+        email: 'billing@megadodo.test',
+        legalName: 'Megadodo Ltd',
+        taxId: '42',
+        phone: '+55 11',
+        status: 'TRIAL',
+        planId: 'plan-1',
+      });
+      // Both system profiles, same as any other company.
+      expect(
+        prisma.profile.create.mock.calls.map(
+          (call: [{ data: { code: string } }]) => call[0].data.code,
+        ),
+      ).toEqual(['ADMIN', 'MEMBER']);
+      // The first administrator is INVITED, never created: nobody at the vendor
+      // gets to know a customer's credential.
+      expect(prisma.user.create).toBeUndefined();
+      expect(invitations.issue).toHaveBeenCalledWith(prisma, {
+        tenantId: 'tenant-1',
+        email: 'ford@megadodo.test',
+        name: 'Ford Prefect',
+        role: 'ADMIN',
+        profileId: 'profile-admin',
+        invitedById: ACTOR.id,
+      });
+      expect(prisma.auditLog.create.mock.calls[0][0].data).toMatchObject({
+        action: 'platform.tenant.create',
+        tenantId: 'tenant-1',
+        userId: 'operator-1',
+        entity: 'Tenant',
+        metadata: {
+          adminEmail: 'ford@megadodo.test',
+          invitationId: 'inv-1',
+          sendInvitation: true,
+        },
+        ip: '10.0.0.1',
+        userAgent: 'jest',
+      });
+      // Nothing existed before, so nothing is claimed to have.
+      expect(prisma.auditLog.create.mock.calls[0][0].data.valuesBefore).toBeUndefined();
+
+      expect(result).toMatchObject({
+        invitationSent: true,
+        tenant: { id: 'tenant-1', slug: 'megadodo', planName: 'Pro', userCount: 0 },
+      });
+    });
+
+    it('mails the invitation only after the transaction closed', async () => {
+      const order: string[] = [];
+      prisma.auditLog.create.mockImplementation(async () => {
+        order.push('audit');
+        return {};
+      });
+      prisma.asPlatform.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const value = await fn(prisma);
+        order.push('commit');
+        return value;
+      });
+      invitations.dispatchInvitationEmail.mockImplementation(() => order.push('mail'));
+
+      await service.create(createInput(), ACTOR);
+
+      // A rollback with the mail already gone hands somebody a working-looking
+      // link to a company that never existed.
+      expect(order).toEqual(['audit', 'commit', 'mail']);
+      expect(invitations.dispatchInvitationEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'ford@megadodo.test',
+          inviteeName: 'Ford Prefect',
+          tenantName: 'Megadodo Publications',
+          inviterName: null,
+          rawToken: 'raw-token',
+          expiresAt: EXPIRES,
+          locale: 'pt-BR',
+        }),
+      );
+    });
+
+    it('mails in English when that is the company’s language', async () => {
+      prisma.tenant.findUniqueOrThrow.mockResolvedValue(makeTenant({ locale: 'en-GB' }));
+
+      await service.create(createInput(), ACTOR);
+
+      expect(invitations.dispatchInvitationEmail.mock.calls[0][0].locale).toBe('en');
+    });
+
+    it('creates the company and the invitation but sends nothing when asked not to', async () => {
+      const result = await service.create(createInput({ sendInvitation: false }), ACTOR);
+
+      // The row exists — the invite can be mailed later from the detail page —
+      // and the response says plainly that nobody has been written to yet.
+      expect(invitations.issue).toHaveBeenCalledTimes(1);
+      expect(invitations.dispatchInvitationEmail).not.toHaveBeenCalled();
+      expect(result.invitationSent).toBe(false);
+      expect(prisma.auditLog.create.mock.calls[0][0].data.metadata.sendInvitation).toBe(false);
+    });
+
+    it('runs everything in the request transaction already in platform scope', async () => {
+      const requestTx = {
+        tenant: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue(makeTenant()),
+          findUniqueOrThrow: jest.fn().mockResolvedValue(makeTenant()),
+        },
+        user: { findUnique: jest.fn().mockResolvedValue(null) },
+        plan: { findFirst: jest.fn().mockResolvedValue(null) },
+        profile: {
+          create: jest.fn(async ({ data }: { data: { code: string } }) => ({
+            id: 'profile-x',
+            ...data,
+          })),
+        },
+        permission: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+
+      await TenantContext.run(
+        { scope: { kind: 'platform' }, tx: requestTx as unknown as Prisma.TransactionClient },
+        () => service.create(createInput(), ACTOR),
+      );
+
+      // Company, profiles, invitation and audit ride the same transaction, so a
+      // failure anywhere leaves no half-built company behind.
+      expect(requestTx.tenant.create).toHaveBeenCalledTimes(1);
+      expect(requestTx.auditLog.create).toHaveBeenCalledTimes(1);
+      expect(invitations.issue.mock.calls[0][0]).toBe(requestTx);
+      expect(prisma.asPlatform).not.toHaveBeenCalled();
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+    });
+
+    it('never mails when the audit row could not be written', async () => {
+      prisma.auditLog.create.mockRejectedValue(new Error('audit write failed'));
+
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow('audit write failed');
+      expect(invitations.dispatchInvitationEmail).not.toHaveBeenCalled();
+    });
+
+    // --- what create refuses ------------------------------------------------
+
+    it('refuses a reserved slug without reading or writing anything', async () => {
+      await expect(service.create(createInput({ slug: 'admin' }), ACTOR)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(prisma.asPlatform).not.toHaveBeenCalled();
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a slug another company already holds', async () => {
+      prisma.tenant.findUnique.mockResolvedValue({ id: 'tenant-existing' });
+
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow(
+        'This address is not available',
+      );
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+      expect(invitations.issue).not.toHaveBeenCalled();
+    });
+
+    it('refuses an administrator address that already has an account', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-existing' });
+
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow(
+        'An account with this email already exists',
+      );
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a plan that does not exist or is no longer sold', async () => {
+      prisma.plan.findFirst.mockResolvedValue(null);
+
+      // Falling back to the default plan here would bill the customer on terms
+      // nobody agreed to, so the operator gets an error instead of a surprise.
+      await expect(
+        service.create(createInput({ planId: 'ghost-plan' }), ACTOR),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+    });
+
+    // The pre-check is a courtesy; two operators racing both pass it. Postgres
+    // decides, and its verdict has to read like the friendly message, not a 500.
+    it('turns a losing race on the slug into the same 409', async () => {
+      prisma.tenant.create.mockRejectedValue(uniqueViolation('tenants_slug_key'));
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow(
+        'This address is not available',
+      );
+    });
+
+    it('turns a losing race on the administrator address into the same 409', async () => {
+      invitations.issue.mockRejectedValue(uniqueViolation('users_email_key'));
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow(
+        'An account with this email already exists',
+      );
+    });
+
+    it('falls back to the slug message when the violation names no constraint', async () => {
+      prisma.tenant.create.mockRejectedValue(uniqueViolation());
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow(
+        'This address is not available',
+      );
+    });
+
+    it('lets any other failure through untranslated', async () => {
+      prisma.tenant.create.mockRejectedValue(new Error('connection reset'));
+      await expect(service.create(createInput(), ACTOR)).rejects.toThrow('connection reset');
+    });
+
+    it('normalises the slug and both addresses to lowercase', async () => {
+      await service.create(
+        createInput({
+          slug: 'MEGADODO',
+          email: 'Billing@Megadodo.TEST',
+          adminEmail: 'Ford@Megadodo.TEST',
+        }),
+        ACTOR,
+      );
+
+      expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+        where: { slug: 'megadodo' },
+        select: { id: true },
+      });
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'ford@megadodo.test' },
+        select: { id: true },
+      });
+      expect(prisma.tenant.create.mock.calls[0][0].data).toMatchObject({
+        slug: 'megadodo',
+        email: 'billing@megadodo.test',
+      });
+      expect(invitations.issue.mock.calls[0][1].email).toBe('ford@megadodo.test');
+    });
+
+    it('passes the operator’s overrides through to the company row', async () => {
+      await service.create(
+        createInput({
+          status: 'ACTIVE',
+          trialDays: 45,
+          locale: 'en-GB',
+          currency: 'GBP',
+          timezone: 'Europe/London',
+        }),
+        ACTOR,
+      );
+
+      const data = prisma.tenant.create.mock.calls[0][0].data;
+      // ACTIVE means a closed sale: no trial date to arm the lockout later.
+      expect(data).toMatchObject({
+        status: 'ACTIVE',
+        trialEndsAt: null,
+        locale: 'en-GB',
+        currency: 'GBP',
+        timezone: 'Europe/London',
+      });
+    });
+
+    it('stores the optional company fields as null when the operator left them out', async () => {
+      await service.create(createInput(), ACTOR);
+
+      expect(prisma.tenant.create.mock.calls[0][0].data).toMatchObject({
+        legalName: null,
+        taxId: null,
+        phone: null,
+        planId: null,
+      });
     });
   });
 

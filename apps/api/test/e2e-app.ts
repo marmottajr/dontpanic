@@ -153,12 +153,28 @@ export async function createE2EApp(
 async function assertCleanStart(): Promise<void> {
   // Through the owner connection: the app's restricted role sees nothing
   // outside a tenant scope, so it would report a dirty database as clean.
-  const leftovers = await ownerDb().user.findMany({ select: { email: true }, take: 20 });
+  const [users, invitations] = await Promise.all([
+    ownerDb().user.findMany({ select: { email: true }, take: 20 }),
+    // Checked separately because an invitation can outlive having no user at
+    // all: a company created from the platform panel has an invited first
+    // administrator and no account until somebody accepts. Such a company
+    // leaks past a users-only check, and the next suite inherits a slug and an
+    // e-mail it did not create.
+    ownerDb().invitation.findMany({ select: { email: true }, take: 20 }),
+  ]);
 
-  if (leftovers.length === 0) return;
+  if (users.length === 0 && invitations.length === 0) return;
+  const left = [
+    users.length > 0 ? `Users: ${JSON.stringify(users.map((u) => u.email))}` : null,
+    invitations.length > 0
+      ? `Invitations: ${JSON.stringify(invitations.map((i) => i.email))}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('. ');
   throw new Error(
     'The database is not clean at the start of this suite — the previous one did not delete ' +
-      `what it seeded. Users: ${JSON.stringify(leftovers.map((u) => u.email))}. ` +
+      `what it seeded. ${left}. ` +
       'See the isolation contract at the top of test/e2e-app.ts.',
   );
 }
@@ -175,8 +191,13 @@ export async function resetDb(): Promise<void> {
   // tables (so TRUNCATE is denied), and under RLS it cannot see rows outside a
   // tenant scope anyway. CASCADE handles the FK graph; RESTART IDENTITY is
   // harmless (uuid PKs).
+  // `invitations` and `oauth_accounts` are named explicitly even though CASCADE
+  // from `tenants`/`users` would reach them anyway: this list is what a reader
+  // treats as the inventory of domain tables, and a table that is only ever
+  // cleared by accident is a table that stops being cleared the day its last
+  // foreign key changes.
   await ownerDb().$executeRawUnsafe(
-    'TRUNCATE TABLE "legal_acceptances", "permissions", "profiles", "audit_logs", "two_factor_backup_codes", "email_verification_tokens", "password_reset_tokens", "refresh_tokens", "users", "tenants", "plans" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "legal_acceptances", "permissions", "profiles", "audit_logs", "two_factor_backup_codes", "email_verification_tokens", "password_reset_tokens", "refresh_tokens", "invitations", "oauth_accounts", "users", "tenants", "plans" RESTART IDENTITY CASCADE',
   );
 }
 

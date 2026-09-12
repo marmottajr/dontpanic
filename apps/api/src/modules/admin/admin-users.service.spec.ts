@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { makePrismaMock } from '../../../test/prisma-mock';
 import { AdminUsersService } from './admin-users.service';
@@ -36,7 +36,6 @@ describe('AdminUsersService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
-        create: jest.fn(),
       },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     });
@@ -69,35 +68,6 @@ describe('AdminUsersService', () => {
       expect(arg.take).toBe(10);
       expect(JSON.stringify(arg.where)).toContain('ford');
       expect(res.totalPages).toBe(1);
-    });
-  });
-
-  describe('create', () => {
-    const input = { email: 'New@X.com', name: 'New', password: 'Sup3rSecret!', role: 'USER' };
-
-    it('creates a verified user, hashes the password and audits', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
-      prisma.user.create.mockResolvedValue(userRow({ id: 'u9', email: 'new@x.com', name: 'New' }));
-      const res = await service.create('admin1', input as never, ctx);
-      expect(prisma.user.create).toHaveBeenCalledWith({
-        data: {
-          email: 'new@x.com',
-          name: 'New',
-          passwordHash: 'hashed-pw',
-          role: 'USER',
-          emailVerified: true,
-        },
-      });
-      expect(prisma.auditLog.create).toHaveBeenCalled();
-      expect(res.id).toBe('u9');
-    });
-
-    it('rejects a duplicate email', async () => {
-      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2', email: 'new@x.com' }));
-      await expect(service.create('admin1', input as never, ctx)).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      expect(prisma.user.create).not.toHaveBeenCalled();
     });
   });
 

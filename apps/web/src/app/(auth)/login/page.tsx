@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -8,12 +8,21 @@ import Link from 'next/link';
 import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { loginSchema, type LoginInput, type LoginResponse } from '@dontpanic/shared';
+import {
+  TWO_FACTOR_TICKET_COOKIE,
+  loginSchema,
+  oauthErrorCodeSchema,
+  type LoginInput,
+  type LoginResponse,
+} from '@dontpanic/shared';
 import { useLogin } from '@/hooks/use-auth';
 import { api, ApiError } from '@/lib/api';
 import { safeInternalPath } from '@/lib/safe-path';
 import { Captcha, type CaptchaHandle } from '@/components/captcha';
 import { captchaEnabled } from '@/lib/captcha';
+import { clearCookie, readCookie } from '@/lib/cookies';
+import { signupEnabled } from '@/lib/auth-config';
+import { OAuthButtons } from '@/components/oauth-buttons';
 import { Brand } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +44,7 @@ export default function LoginPage() {
   const tc = useTranslations('common');
   const tErr = useTranslations('errors');
   const tCaptcha = useTranslations('auth.captcha');
+  const tOauth = useTranslations('auth.oauth.errors');
   const router = useRouter();
   const searchParams = useSearchParams();
   const login = useLogin();
@@ -47,6 +57,65 @@ export default function LoginPage() {
   const [ticket, setTicket] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
+
+  /**
+   * A social callback that could not sign the user in bounces back here as
+   * `?error=<code>`. Read it once, translate it, and take it out of the
+   * address bar: leaving it there means the message reappears on every later
+   * reload — including after a successful sign-in attempt — and it also travels
+   * on into the `from=` round-trip and into anything the user pastes.
+   *
+   * An unknown value degrades to the deliberately coarse `failed`, never to the
+   * raw string: the code drives a translation, so whatever an attacker puts in
+   * the query string must not reach the screen.
+   */
+  const oauthErrorHandled = useRef(false);
+  useEffect(() => {
+    if (oauthErrorHandled.current) return;
+    const raw = searchParams.get('error');
+    if (!raw) return;
+    oauthErrorHandled.current = true;
+
+    const parsed = oauthErrorCodeSchema.safeParse(raw);
+    setAuthError(tOauth(parsed.success ? parsed.data : 'failed'));
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('error');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [searchParams, tOauth]);
+
+  /**
+   * A social sign-in that owed a second factor comes back as `?twofactor=1`
+   * with the ticket in a short-lived cookie, and this picks it up so the card
+   * swaps straight to the code step.
+   *
+   * The ticket travels in a cookie rather than the query string to keep it out
+   * of browser history and the Referer header — but it still has to reach the
+   * body of `/auth/2fa/verify`, so it is read here and then deleted, because a
+   * ticket left in the jar would be replayed onto the next visit to this page
+   * long after the flow it belonged to was abandoned.
+   */
+  const twoFactorHandoffHandled = useRef(false);
+  useEffect(() => {
+    if (twoFactorHandoffHandled.current) return;
+    if (searchParams.get('twofactor') !== '1') return;
+    twoFactorHandoffHandled.current = true;
+
+    const pending = readCookie(TWO_FACTOR_TICKET_COOKIE);
+    clearCookie(TWO_FACTOR_TICKET_COOKIE);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('twofactor');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+
+    // No cookie means it expired, or the browser dropped it. Say the ordinary
+    // "that did not work" rather than inventing a state the user cannot act on.
+    if (!pending) {
+      setAuthError(tOauth('failed'));
+      return;
+    }
+    setTicket(pending);
+  }, [searchParams, tOauth]);
 
   const {
     register,
@@ -224,15 +293,24 @@ export default function LoginPage() {
             {isSubmitting && <Loader2 className="size-4 animate-spin" />}
             {t('submit')}
           </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            {t('noAccount')}{' '}
-            <Link
-              href="/signup"
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              {t('signup')}
-            </Link>
-          </p>
+
+          {/* Renders itself away — separator included — when no provider is
+              configured, which is the default deployment. */}
+          <OAuthButtons intent="login" className="w-full" />
+
+          {/* With registration closed there is nothing behind this link but a
+              "closed" screen, so it is not offered at all. */}
+          {signupEnabled && (
+            <p className="text-center text-sm text-muted-foreground">
+              {t('noAccount')}{' '}
+              <Link
+                href="/signup"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {t('signup')}
+              </Link>
+            </p>
+          )}
         </CardFooter>
       </form>
     </Card>

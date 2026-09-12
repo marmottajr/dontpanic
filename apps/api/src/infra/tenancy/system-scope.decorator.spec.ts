@@ -52,6 +52,24 @@ describe('SystemScope', () => {
       // refresh, forgot-password, reset-password. Anything authenticated
       // (logout, me, …) stays inside tenant isolation.
       'modules/auth/auth.controller.ts:8',
+
+      // `POST auth/oauth/complete-signup`. A social identity nobody recognises
+      // is finishing registration, which creates the company — so there is no
+      // tenant yet, exactly as on `signup`. The `start` and `callback` routes
+      // are NOT here: they open their own `asSystem` transaction inside the
+      // service, which is narrower than marking the whole request.
+      'modules/auth/oauth/oauth.controller.ts:1',
+
+      // `GET auth/invitations/:token` and `POST auth/invitations/accept`. Both
+      // run for someone with no session, and the tenant is the *result* of
+      // resolving the token rather than an input to it — the same shape as
+      // login, where the company is discovered from the e-mail. Neither route
+      // reads anything the token did not name: the preview returns one
+      // invitation, and the accept writes one user into the company that
+      // invited them. The seat check inside accept re-enters tenant scope
+      // deliberately (see InvitationsService.accept) instead of counting
+      // across companies.
+      'modules/invitations/public-invitations.controller.ts:2',
     ]);
   });
 });

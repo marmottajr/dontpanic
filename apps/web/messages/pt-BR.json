@@ -56,7 +56,10 @@
       "submit": "Criar empresa",
       "hasAccount": "Já tem conta?",
       "signin": "Entrar",
-      "success": "Empresa criada! Verifique seu e-mail para confirmar."
+      "success": "Empresa criada! Verifique seu e-mail para confirmar.",
+      "closedTitle": "Cadastro fechado",
+      "closedBody": "Este sistema não aceita cadastro público de novas empresas.",
+      "closedInvite": "O acesso é feito por convite. Se você espera um, procure o e-mail com o link de convite; se já tem conta, entre normalmente."
     },
     "forgot": {
       "title": "Recuperar senha",
@@ -92,6 +95,35 @@
       "required": "Confirme que você não é um robô para continuar.",
       "failed": "Não conseguimos validar o desafio. Tente de novo.",
       "unavailable": "Verificação indisponível no momento. Tente em instantes."
+    },
+    "oauth": {
+      "separator": "ou",
+      "continueWith": "Continuar com {provider}",
+      "provider": {
+        "google": "Google",
+        "apple": "Apple",
+        "github": "GitHub"
+      },
+      "errors": {
+        "failed": "Não foi possível concluir o acesso pelo provedor. Tente novamente.",
+        "unverified_email": "O provedor não confirmou esse endereço de e-mail. Use outro método de acesso.",
+        "no_account": "Não existe conta para esse e-mail.",
+        "signup_disabled": "O cadastro de novas empresas está desativado.",
+        "account_conflict": "Não é possível entrar por esse provedor com essa conta.",
+        "provider_disabled": "Esse provedor não está disponível neste ambiente."
+      }
+    },
+    "completeSignup": {
+      "title": "Conclua seu cadastro",
+      "subtitle": "Falta só nomear a empresa. Não entre em pânico.",
+      "identityNotice": "Seu e-mail já foi confirmado pelo provedor e não é editável aqui. Você entrará sempre por ele — não há senha a definir.",
+      "taxId": "CNPJ/CPF",
+      "companyPhone": "Telefone da empresa",
+      "personLegend": "Você",
+      "termsLink": "Termos de Uso",
+      "privacyLink": "Política de Privacidade",
+      "submit": "Criar empresa",
+      "ticketExpired": "Este link de conclusão expirou ou já foi usado. Comece o cadastro de novo."
     }
   },
   "dashboard": {
@@ -104,7 +136,10 @@
         "title": "Seguro por padrão",
         "body": "JWT, 2FA, CSRF, rate-limit e auditoria já inclusos."
       },
-      "i18n": { "title": "Multilíngue", "body": "pt-BR e en-US prontos, troque pela bandeira." },
+      "i18n": {
+        "title": "Multilíngue",
+        "body": "pt-BR e en-US prontos, troque pela bandeira."
+      },
       "swappable": {
         "title": "Tudo plugável",
         "body": "Banco, storage e e-mail trocáveis por uma variável."
@@ -120,14 +155,21 @@
   "profile": {
     "title": "Perfil",
     "subtitle": "Gerencie sua conta e segurança.",
-    "tabs": { "general": "Geral", "security": "Segurança" },
+    "tabs": {
+      "general": "Geral",
+      "security": "Segurança"
+    },
     "avatar": {
       "title": "Foto de perfil",
       "upload": "Enviar imagem",
       "remove": "Remover",
       "hint": "PNG, JPG ou WebP até 5MB."
     },
-    "nameSection": { "title": "Nome", "save": "Salvar nome", "updated": "Nome atualizado." },
+    "nameSection": {
+      "title": "Nome",
+      "save": "Salvar nome",
+      "updated": "Nome atualizado."
+    },
     "email": {
       "title": "E-mail",
       "change": "Alterar e-mail",
@@ -206,13 +248,47 @@
     "pageInfo": "Página {page} de {total}",
     "prev": "Anterior",
     "next": "Próxima",
-    "newUser": "Novo usuário",
-    "create": {
-      "title": "Novo usuário",
-      "subtitle": "A conta é criada já verificada.",
+    "inviteUser": "Convidar usuário",
+    "invite": {
+      "title": "Convidar usuário",
+      "subtitle": "A pessoa recebe um e-mail e escolhe a própria senha.",
       "role": "Papel",
-      "submit": "Criar usuário",
-      "created": "Usuário criado."
+      "profile": "Perfil de permissões",
+      "profileDefault": "Perfil padrão da empresa",
+      "nameHint": "Só para pré-preencher o formulário de aceite — a pessoa pode alterar.",
+      "explainer": "Ninguém aqui define a senha de outra pessoa: o convite é um link de uso único, e aceitar o convite é o que prova que o e-mail é dela.",
+      "submit": "Enviar convite",
+      "sent": "Convite enviado.",
+      "duplicate": "Já existe um usuário ou um convite pendente para esse e-mail.",
+      "invalid": "Revise os campos: algum valor não é aceito pelo contrato do convite."
+    },
+    "invitations": {
+      "title": "Convites",
+      "subtitle": "Convites enviados por esta empresa.",
+      "tableCaption": "Convites enviados pela empresa",
+      "colInvitee": "Convidado",
+      "colRole": "Papel",
+      "colStatus": "Situação",
+      "colExpires": "Expira em",
+      "colInvitedBy": "Convidado por",
+      "colActions": "Ações",
+      "empty": "Nenhum convite enviado.",
+      "status": {
+        "PENDING": "Pendente",
+        "ACCEPTED": "Aceito",
+        "REVOKED": "Revogado",
+        "EXPIRED": "Expirado"
+      },
+      "resend": "Reenviar o convite de {email}",
+      "revoke": "Revogar o convite de {email}",
+      "resent": "Convite reenviado.",
+      "revoked": "Convite revogado.",
+      "revokeTitle": "Revogar convite",
+      "revokeConfirm": "Revogar o convite de {email}? O link enviado deixa de funcionar na hora.",
+      "revokeAction": "Revogar",
+      "pageInfo": "Página {page} de {total}",
+      "prev": "Anterior",
+      "next": "Próxima"
     }
   },
   "session": {
@@ -449,7 +525,51 @@
       "planChanged": "Plano alterado.",
       "trialExtended": "Avaliação estendida.",
       "planCreated": "Plano criado.",
-      "planUpdated": "Plano atualizado."
+      "planUpdated": "Plano atualizado.",
+      "tenantCreatedInvited": "Empresa criada e convite enviado ao administrador.",
+      "tenantCreatedNoInvite": "Empresa criada. Nenhum convite foi enviado ainda."
+    },
+    "createTenant": {
+      "newTenant": "Nova empresa",
+      "title": "Nova empresa",
+      "subtitle": "Cadastre a empresa e convide o primeiro administrador dela.",
+      "companyLegend": "A empresa",
+      "companyName": "Nome da empresa",
+      "slug": "Endereço (slug)",
+      "legalName": "Razão social",
+      "taxId": "CNPJ/CPF",
+      "email": "E-mail da empresa",
+      "emailHint": "Endereço de contato e cobrança da empresa — não é o do administrador.",
+      "phone": "Telefone",
+      "commercialLegend": "Condições comerciais",
+      "plan": "Plano",
+      "noPlan": "Sem plano",
+      "status": "Situação inicial",
+      "trialDays": "Dias de avaliação",
+      "trialDaysPlaceholder": "Usar os dias do plano",
+      "currency": "Moeda",
+      "locale": "Idioma",
+      "timezone": "Fuso horário",
+      "adminLegend": "O primeiro administrador",
+      "adminName": "Nome do administrador",
+      "adminEmail": "E-mail do administrador",
+      "noPasswordNotice": "O administrador recebe um convite, não uma senha: o link é de uso único e é ele quem escolhe a própria senha ao aceitar. Ninguém aqui conhece a credencial do cliente.",
+      "sendInvitation": "Enviar o convite agora",
+      "sendInvitationOn": "O convite sai por e-mail assim que a empresa for criada.",
+      "sendInvitationOff": "A empresa é criada e ninguém recebe e-mail agora. O convite pode ser enviado depois.",
+      "submit": "Criar empresa",
+      "invalid": "Revise os campos: algum valor não é aceito pelo contrato."
     }
+  },
+  "invite": {
+    "title": "Você foi convidado para {company}",
+    "subtitle": "Escolha sua senha para criar o acesso.",
+    "company": "Empresa",
+    "submit": "Aceitar convite",
+    "invalidTitle": "Convite indisponível",
+    "invalid": "Este convite não é mais válido.",
+    "invalidHint": "Ele pode ter expirado, já ter sido usado ou ter sido cancelado. Peça um novo convite a quem administra a empresa.",
+    "termsLink": "Termos de Uso",
+    "privacyLink": "Política de Privacidade"
   }
 }

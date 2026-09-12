@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 // --- module mocks -----------------------------------------------------------
 const push = vi.fn();
 const refresh = vi.fn();
-const getParam = vi.fn(() => null);
+const getParam = vi.fn<(key: string) => string | null>(() => null);
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh, replace: vi.fn() }),
@@ -63,6 +63,19 @@ const messages = {
       invalid: 'Incorrect email or password.',
       locked: 'Account temporarily locked.',
     },
+    oauth: {
+      separator: 'or',
+      continueWith: 'Continue with {provider}',
+      provider: { google: 'Google', apple: 'Apple', github: 'GitHub' },
+      errors: {
+        failed: 'Social sign-in did not complete.',
+        unverified_email: 'The provider has not confirmed that address.',
+        no_account: 'There is no account for that email.',
+        signup_disabled: 'Registering new companies is off.',
+        account_conflict: 'That account cannot sign in this way.',
+        provider_disabled: 'That provider is not available here.',
+      },
+    },
   },
   errors: { generic: 'Something went wrong.' },
 };
@@ -93,6 +106,7 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Email')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    // Registration is on by default, so the link is offered.
     expect(screen.getByRole('link', { name: 'Create one' })).toHaveAttribute('href', '/signup');
   });
 
@@ -238,5 +252,155 @@ describe('LoginPage', () => {
 
     await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith('Something went wrong.'));
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoginPage — registration gating', () => {
+  it('hides the "create account" link when public signup is off', async () => {
+    // Behind the link there would be nothing but a "closed" screen, and the
+    // API answers 403 to every submit — so it is not offered at all.
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_SIGNUP_ENABLED', 'false');
+    const { default: GatedLogin } = await import('./page');
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <NextIntlClientProvider locale="en-US" messages={messages}>
+          <GatedLogin />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Create one' })).not.toBeInTheDocument();
+    // The login form itself is untouched.
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+});
+
+describe('LoginPage — social sign-in', () => {
+  it('renders one button per configured provider, through the BFF', async () => {
+    vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_OAUTH_PROVIDERS', 'google');
+    const { default: SocialLogin } = await import('./page');
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <NextIntlClientProvider locale="en-US" messages={messages}>
+          <SocialLogin />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute(
+      'href',
+      '/api/auth/oauth/google/start?intent=login',
+    );
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('renders no social block when none is configured', () => {
+    renderLogin();
+    expect(screen.queryByText('or')).not.toBeInTheDocument();
+  });
+
+  it('translates a callback error and takes it out of the address bar', async () => {
+    getParam.mockImplementation((key: string) => (key === 'error' ? 'no_account' : null));
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+
+    renderLogin();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'There is no account for that email.',
+    );
+    // Left in the URL it would come back on every reload, and travel on into
+    // anything the user pastes.
+    expect(replaceState).toHaveBeenCalled();
+    expect(String(replaceState.mock.calls[0]?.[2])).not.toContain('error=');
+    replaceState.mockRestore();
+  });
+
+  it('degrades an unknown error code to the coarse one instead of echoing it', async () => {
+    // Whatever an attacker puts in the query string drives a translation, so it
+    // must never reach the screen verbatim.
+    getParam.mockImplementation((key: string) => (key === 'error' ? '<script>' : null));
+
+    renderLogin();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Social sign-in did not complete.');
+  });
+});
+
+describe('LoginPage — second factor after social sign-in', () => {
+  const TICKET_COOKIE = 'dp_2fa_ticket';
+
+  afterEach(() => {
+    document.cookie = `${TICKET_COOKIE}=; Path=/; Max-Age=0`;
+  });
+
+  // The bypass this closes: without the hand-off, a user who deliberately
+  // enabled TOTP would get a full session straight out of the provider
+  // redirect, and the factor they turned on would never be asked for.
+  it('swaps to the code step using the ticket the callback left in a cookie', async () => {
+    document.cookie = `${TICKET_COOKIE}=oauth-ticket-123; Path=/`;
+    getParam.mockImplementation((key: string) => (key === 'twofactor' ? '1' : null));
+
+    renderLogin();
+
+    expect(await screen.findByLabelText('6-digit code')).toBeInTheDocument();
+  });
+
+  it('consumes the cookie and the query param so neither is replayed', async () => {
+    document.cookie = `${TICKET_COOKIE}=oauth-ticket-123; Path=/`;
+    getParam.mockImplementation((key: string) => (key === 'twofactor' ? '1' : null));
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+
+    renderLogin();
+    await screen.findByLabelText('6-digit code');
+
+    // A ticket left in the jar would resurface on the next visit to this page,
+    // long after the flow it belonged to was abandoned.
+    expect(document.cookie).not.toContain(TICKET_COOKIE);
+    expect(String(replaceState.mock.calls[0]?.[2])).not.toContain('twofactor=');
+    replaceState.mockRestore();
+  });
+
+  it('verifies the code with the ticket from the cookie and navigates', async () => {
+    document.cookie = `${TICKET_COOKIE}=oauth-ticket-123; Path=/`;
+    getParam.mockImplementation((key: string) => (key === 'twofactor' ? '1' : null));
+    apiMock.mockResolvedValueOnce({ user: { id: 'u1' } });
+
+    renderLogin();
+    await screen.findByLabelText('6-digit code');
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('6-digit code'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    await vi.waitFor(() =>
+      expect(apiMock).toHaveBeenLastCalledWith('/auth/2fa/verify', {
+        method: 'POST',
+        body: { ticket: 'oauth-ticket-123', code: '123456' },
+      }),
+    );
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith('/'));
+  });
+
+  // Expired, or dropped by the browser. There is nothing the user can do with
+  // that distinction, so it collapses into the ordinary failure message rather
+  // than a dead code form with no ticket behind it.
+  it('falls back to the generic failure when the cookie is gone', async () => {
+    getParam.mockImplementation((key: string) => (key === 'twofactor' ? '1' : null));
+
+    renderLogin();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Social sign-in did not complete.');
+    expect(screen.queryByLabelText('6-digit code')).not.toBeInTheDocument();
   });
 });

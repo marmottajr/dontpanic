@@ -137,3 +137,19 @@ export const sessionEndedSchema = z.object({
   sessionEnded: sessionEndReasonSchema,
 });
 export type SessionEnded = z.infer<typeof sessionEndedSchema>;
+
+/**
+ * Cookie carrying a pending two-factor ticket from an OAuth callback to the
+ * login screen.
+ *
+ * It lives in the shared package because both halves read it and a name that
+ * matched only by coincidence would fail in the quietest possible way: the API
+ * would hand over a ticket the page never looks for, the second factor would
+ * never be asked for, and the user would simply sit on a login form that has
+ * no idea it is mid-flow.
+ *
+ * Only social sign-in needs it. After a password, `POST /auth/login` returns
+ * the ticket in its response body, because there is a response body to put it
+ * in; a redirect has no such channel.
+ */
+export const TWO_FACTOR_TICKET_COOKIE = 'dp_2fa_ticket';

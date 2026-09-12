@@ -72,6 +72,9 @@ Trocar de provider = trocar uma variável, sem tocar na lógica.
 - Refresh com **rotação** e **detecção de reuso** (token roubado → revoga a família inteira).
 - **CSRF** double-submit nas mutações. **2FA TOTP** + códigos de backup. **Lockout** por tentativas.
 - O front nunca fala direto com a API: usa um **BFF proxy** (route handlers) que repassa cookies.
+- Quem entra e por onde: **signup público** (opcional, `PUBLIC_SIGNUP_ENABLED`), **convite** — a
+  única porta para empresa que já existe — e **login social** (opcional, por provider). Cada um tem
+  seção própria abaixo; `passwordHash` é nullable por causa do social.
 
 ---
 
@@ -182,6 +185,191 @@ O worker sai na **mesma imagem** da API — o `nest build` emite `dist/worker.js
 `dist/main.js`. Suba um segundo container sobrescrevendo o comando para `node dist/worker.js`.
 **Só o container da API roda migration**; dois processos disputando a mesma migration é como um
 deploy corrompe o próprio histórico de schema.
+
+---
+
+## Convites — a única porta para uma empresa que já existe
+
+> **Para agentes de IA:** `InvitationsService.issue()` grava dentro da transação **do chamador**,
+> mas o e-mail sai **depois do commit**. Se você mover o disparo para dentro da transação porque
+> "fica mais simples", um rollback entrega um link válido apontando para uma empresa que não
+> existe — e ninguém consegue fechar esse chamado. Antes de mexer em `issue()`, em quem o chama, ou
+> em qualquer coisa que crie usuário, leia esta seção inteira.
+
+`POST /auth/signup` cria **empresa + primeiro admin**, e só isso. Para uma empresa que já existe,
+convite é a única entrada: um ADMIN chamando um colega, ou o operador da plataforma entregando uma
+empresa que acabou de criar. Os dois produzem a mesma linha, porque quem clica no link não tem como
+distinguir — e não deveria precisar.
+
+**Registro público virou opcional.** `PUBLIC_SIGNUP_ENABLED` (default `true`) decide se um
+desconhecido consegue criar empresa pelo formulário. Desligado, sobram o convite e o seed — que é o
+que um deploy interno ou um produto vendido por time comercial quer. O default `true` preserva o
+comportamento que o boilerplate sempre teve e mantém um clone novo utilizável sem rodar o seed;
+**não é um default seguro, é uma decisão de deploy**, e está no checklist de produção por isso.
+`NEXT_PUBLIC_SIGNUP_ENABLED` no web precisa concordar: se discordarem, o formulário renderiza e todo
+submit responde 403 — a mesma armadilha que o captcha já tem, pela mesma razão.
+
+### O que o fluxo antigo fazia de errado
+
+Antes, o ADMIN cadastrava o colega **digitando a senha dele**, e a conta nascia `emailVerified: true`
+na palavra do admin. Errado duas vezes: **duas pessoas passavam a conhecer a credencial** (e a única
+que respondia por ela era a que não a escolheu), e **o endereço nunca foi provado** — era o que o
+admin digitou, incluindo o dígito trocado. Agora o convidado escolhe a própria senha, e o clique no
+link mailado é o que prova o endereço. O inviter nunca aprende a credencial e nunca precisou.
+
+### O desenho
+
+- **O token cru existe no e-mail e em lugar nenhum mais.** O banco guarda só o **SHA-256**
+  (`tokenHash`), mesma disciplina do reset de senha: banco vazado não rende link utilizável.
+  SHA-256 e não Argon2 porque o token já são 256 bits de aleatoriedade — não há o que esticar, e a
+  busca precisa ser rápida.
+- **No máximo 1 convite `PENDING` por (tenant, e-mail)**, garantido por um índice único **parcial**
+  (`WHERE status = 'PENDING'`). Parcial porque a restrição só vale enquanto o convite está vivo:
+  depois de aceito ou revogado, a mesma pessoa pode legitimamente ser convidada de novo, e um
+  `UNIQUE(tenantId, email)` simples recusaria isso para sempre. O índice também fecha a corrida que
+  o pré-check do service não fecha — dois admins convidando o mesmo colega no mesmo instante veem
+  ambos "não há convite pendente" e ambos inserem; o Postgres recusa o segundo e o service traduz o
+  `P2002` em 409. Prisma não sabe expressar índice parcial: ele vive na migration e está documentado
+  no model.
+- **`EXPIRED` não é estado gravado.** Expirar é um fato sobre `expiresAt` e o relógio, não uma
+  transição. O status é derivado na leitura, então nenhuma linha fica na tabela se dizendo viva
+  depois do prazo só porque nenhum job passou por ali.
+- **Grava na transação, manda o e-mail depois do commit.** `issue()` recebe o `tx` do chamador — a
+  linha do convite tem que morrer junto com a empresa se o resto falhar. O e-mail, não: por isso
+  `dispatchInvitationEmail()` é chamado **fora**, depois que a transação fechou.
+- **O limite de plano vale no ACEITE.** É o aceite que consome o assento, e é lá que o
+  `assertCanAddUser` roda **dentro da mesma transação** que cria o usuário — o que mantém o
+  `pg_advisory_xact_lock` e a contagem em volta da escrita. O `assertCanAddUser` na emissão é
+  cortesia, **não** a garantia: entre o convite e o clique alguém pode entrar, sair ou o plano pode
+  mudar; ele só evita que um ADMIN mande convite para um plano que já está cheio. Emitir dez
+  convites com três assentos livres é permitido — o quarto aceite é que falha.
+- **O aceite corre em escopo `system`** (não há tenant antes de resolver o token), então o tenant
+  resolvido é passado à mão para o `PlanLimitsService` via `TenantContext.run`. Não é detalhe de
+  estilo: sem isso o serviço leria o tenant do contexto do request, que ali está vazio.
+- **`role` é limitado a `ADMIN`/`USER` no schema Zod**, não num guard. Um ADMIN de empresa
+  convidando um SUPERADMIN seria escalada para fora do tenant; recusar no contrato não depende de
+  alguém lembrar de checar.
+- **O aceite pede `acceptTerms` de novo.** A empresa ter aceitado os termos antes é ato da empresa,
+  não da pessoa.
+
+### Rotas e envs
+
+| Rota                                 | Quem                | O que faz                                      |
+| ------------------------------------ | ------------------- | ---------------------------------------------- |
+| `POST /admin/invitations`            | ADMIN da empresa    | emite e manda o e-mail                         |
+| `GET /admin/invitations`             | ADMIN da empresa    | lista, com o status derivado                   |
+| `POST /admin/invitations/:id/resend` | ADMIN da empresa    | reenvia, até `INVITATION_MAX_RESENDS`          |
+| `DELETE /admin/invitations/:id`      | ADMIN da empresa    | revoga (`REVOKED`, o token deixa de valer)     |
+| `GET /auth/invitations/:token`       | público, sem sessão | preview: "esse link ainda vale? o que é isto?" |
+| `POST /auth/invitations/accept`      | público, sem sessão | cria a conta e consome o convite               |
+
+`INVITATION_TTL_HOURS` (default `168`, uma semana) e `INVITATION_MAX_RESENDS` (default `5`). O TTL é
+longo o bastante para atravessar um feriado e curto o bastante para uma caixa encaminhada não virar
+chave permanente da empresa; o teto de reenvios impede que "reenviar" vire um jeito de martelar um
+endereço usando a nossa reputação de envio.
+
+O preview público responde **uma** pergunta e nada mais: e-mail do convidado, nome sugerido, nome da
+empresa, validade. Sem e-mail de quem convidou, sem contagem de usuários, sem id da empresa — o
+token viaja numa URL por clientes de e-mail e proxies, então tudo que ele destranca é semi-público.
+
+### Criar empresa pelo painel da plataforma
+
+`POST /platform/tenants` (SUPERADMIN) faz o mesmo caminho: cria a empresa, os perfis de sistema
+(via `provisionTenant`, o mesmo que o signup e o seed usam — foi extraído justamente para as três
+portas não divergirem) e **convida** o primeiro admin, tudo numa transação. **Não cria usuário**:
+ninguém do lado do fornecedor deve conhecer a credencial de um cliente, e um endereço digitado por
+um operador é boato até alguém prová-lo aceitando. `sendInvitation: false` cria a empresa com o
+convite pendente e **sem mandar e-mail** — para importação e para cliente que vai ser configurado
+antes da reunião de kickoff; o convite sai depois, pela tela de detalhe.
+
+---
+
+## Login social — decisão de deploy opcional
+
+> **Para agentes de IA:** duas coisas aqui não são preferência, são segurança. **A chave da
+> identidade é o `providerAccountId` imutável, nunca o e-mail** — endereço é reciclado, e casar por
+> e-mail é como uma pessoa herda a conta de outra. E **e-mail não verificado pelo provedor nunca
+> vincula conta**. Se você for "melhorar" o matching, ou aceitar um `email_verified: false` porque
+> "o provedor é confiável", pare e **pergunte ao Marcio**.
+
+Vem tudo desligado: `OAUTH_PROVIDERS` vazio significa nenhum botão na tela de login e `404` em toda
+rota `/auth/oauth/*`. Ligar é por provider.
+
+### O fluxo
+
+```
+GET  /auth/oauth/:provider/start      → 302 para o provedor
+←    /auth/oauth/:provider/callback   → 302 de volta para o web app
+POST /auth/oauth/complete-signup      → só quando o callback não pôde terminar sozinho
+```
+
+O callback termina sozinho nos dois casos comuns: a conta social **já está vinculada**, ou o e-mail
+**verificado** bate com um usuário existente (e aí vincula). O terceiro caso — identidade que
+ninguém tem — **não** cria empresa direto, mesmo com `PUBLIC_SIGNUP_ENABLED=true`: criar empresa
+exige nome e slug, e provedor nenhum tem como saber isso. Derivar do e-mail produziria empresas
+chamadas `joao-silva-gmail-com`. Então a identidade verificada é guardada num **ticket de uso único
+e vida curta** e o browser vai para uma tela "complete seu cadastro". Nessa tela o e-mail é
+**read-only**: ele veio de um claim verificado, e deixar o formulário editá-lo transformaria
+identidade provada em identidade autodeclarada.
+
+### Por provider
+
+| Provider   | O que configurar                                                                                              | A pegadinha                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Google** | `OAUTH_GOOGLE_CLIENT_ID` / `_SECRET` — Google Cloud Console › Credentials                                     | OIDC direto, o menos surpreendente dos três: `id_token` traz `sub` e `email_verified`.                                                                                                                                                                                                                                                         |
+| **Apple**  | `OAUTH_APPLE_CLIENT_ID` (**Services ID**, não o App ID), `_TEAM_ID`, `_KEY_ID`, `_PRIVATE_KEY` (PEM do `.p8`) | O client secret **não é string fixa**: é um JWT **ES256** que a API assina com a `.p8` e **rotaciona** sozinha. O callback chega por **POST** (`response_mode=form_post`), então rota de callback que só aceita GET quebra só na Apple. E o **nome do usuário vem só na primeira autorização** — perdeu ali, nenhum login futuro traz de novo. |
+| **GitHub** | `OAUTH_GITHUB_CLIENT_ID` / `_SECRET` — Developer settings › OAuth Apps                                        | **Não tem OIDC**: não existe `id_token` de onde ler o e-mail. Exige uma chamada extra a `/user/emails`, e a API do GitHub **recusa request sem header `User-Agent`**. Só endereço `primary` **e** `verified` é aceito.                                                                                                                         |
+
+`OAUTH_CALLBACK_BASE_URL` precisa bater **caractere a caractere** com o redirect URI registrado em
+cada provider — esquema, host, porta, caminho, barra final. O provedor compara a string, não a URL,
+e a divergência é rejeitada lá, numa página de erro que a aplicação nunca vê.
+
+`validateEnv` **falha o boot** se um provider listado estiver sem credencial, se a lista não estiver
+vazia e `OAUTH_CALLBACK_BASE_URL` faltar, ou se houver nome desconhecido na lista. Não é rigor
+gratuito: meio-ligado renderiza um botão que não leva a lugar nenhum, e um typo desliga em silêncio
+exatamente o provider que o operador achava ter ligado. Falhar no boot é a única versão disso que o
+operador descobre antes do usuário. `NEXT_PUBLIC_OAUTH_PROVIDERS` no web tem que listar os mesmos
+nomes; listando a mais, o botão extra dá 404.
+
+### As decisões que não são negociáveis
+
+- **A chave é o `providerAccountId`** (`sub` no Google e na Apple, o id numérico no GitHub), com
+  `@@unique([provider, providerAccountId])`. Nunca o e-mail: as pessoas trocam de endereço, e casar
+  por e-mail reciclado é como o novo dono de um endereço antigo herda a conta de outra pessoa. O
+  `email` na `oauth_accounts` é para **exibição** e pode estar velho.
+- **E-mail não verificado não vincula nada.** O callback devolve `unverified_email`. Aceitar
+  deixaria qualquer um que consiga criar conta no provedor reivindicar o usuário DontPanic daquele
+  endereço.
+- **Uma identidade social vale para uma pessoa só.** O unique é global, não por tenant: uma conta
+  Google entrando em duas empresas tornaria "entrar com o Google" ambíguo, sem jeito de o usuário
+  resolver. E `@@unique([userId, provider])` impede uma segunda conta Google no mesmo usuário, que
+  faria uma das duas virar peso morto.
+- **`User.passwordHash` é nullable.** Conta que só entra por social não tem senha, e gravar um hash
+  aleatório seria uma mentira que o código não consegue distinguir de credencial de verdade.
+- **Login com senha numa conta social devolve o erro genérico de sempre** — e paga o mesmo custo de
+  Argon2. `verifyPassword(null, …)` verifica contra um hash de algo que ninguém conhece antes de
+  responder `false`. Pular esse trabalho faria o tempo de resposta virar oráculo: dá para enumerar,
+  cronometrando o formulário de login, quais endereços são social-only — precisamente o conjunto que
+  vale a pena phishar. Nunca responda "esta conta usa login social".
+- **Login social NÃO pula o 2FA.** Se o usuário tem TOTP ligado, o callback para antes de emitir
+  sessão: cria o mesmo ticket que `POST /auth/login` criaria, entrega num cookie curto
+  (`TWO_FACTOR_TICKET_COOKIE`, definido no `@dontpanic/shared` para os dois lados lerem o mesmo
+  nome) e redireciona para `/login?twofactor=1`, onde a tela troca para o passo do código. O
+  `TwoFactorGateGuard` **não** cobre isto — ele só verifica que o 2FA está _habilitado_, nunca que
+  esta sessão passou por ele —, então sem esse desvio "entrar com o Google" seria estritamente mais
+  fraco que digitar a senha, e o fator que o usuário deliberadamente ligou nunca seria pedido. O
+  ticket vai em cookie e não na query string para ficar fora do histórico do navegador, do header
+  `Referer` e dos logs de proxy no caminho; é legível por script porque a página precisa colocá-lo
+  no corpo do verify, que é exatamente a exposição que o fluxo de senha já aceita (lá o ticket chega
+  num JSON que a página lê). Quem limita o estrago é o ticket: cinco minutos, uso único, queimado no
+  primeiro verify e inútil sem um código TOTP vivo.
+- **Os códigos de erro do callback são grossos de propósito.** `failed` cobre cookie de state ruim,
+  troca de code recusada e provedor fora do ar, tudo junto: dizer qual dos três aconteceu só ajuda a
+  calibrar.
+- **`oauth_accounts` tem `tenantId` denormalizado**, espelhando `User.tenantId` (nulo para
+  SUPERADMIN). É o que faz `app.apply_tenant_rls()` proteger a tabela como qualquer outra — política
+  de RLS é predicado por tabela, e tabela sem coluna de tenant teria que ficar de fora da varredura
+  e ser protegida na mão, que é o tipo de exceção que se esquece.
 
 ---
 
@@ -377,7 +565,20 @@ nem aparece em erro de segurança real. Mantenha sóbrio onde importa.
   do rate limit. Veja "Rate limit e IP do cliente".
 - Não criar rota de auth (ou qualquer coisa que adivinhe segredo) sem `@SensitiveThrottle()`.
 - Não expor `CAPTCHA_SECRET_KEY` no front nem ligar o captcha só num dos lados (API/web).
+- Não ligar OAuth só de um lado: `OAUTH_PROVIDERS` e `NEXT_PUBLIC_OAUTH_PROVIDERS` listam os mesmos
+  nomes, ou o botão extra dá 404. Mesma regra para `PUBLIC_SIGNUP_ENABLED` /
+  `NEXT_PUBLIC_SIGNUP_ENABLED` — em desacordo, o formulário aparece e todo submit dá 403.
+- Não vincular conta social por e-mail que o provedor não verificou, e **nunca** usar o e-mail como
+  chave de identidade: é o `providerAccountId` imutável. Endereço reciclado herdaria conta alheia.
+- Não dizer "esta conta usa login social" num erro de login — é o erro genérico de credencial
+  inválida, com o mesmo custo de Argon2, senão vira oráculo de enumeração.
+- Não disparar o e-mail de convite dentro da transação: um rollback deixa link válido apontando para
+  nada. `issue()` grava no `tx` do chamador; o envio é depois do commit.
+- Não criar usuário de outra pessoa definindo a senha dela. Para empresa que já existe é convite —
+  quem entra escolhe a própria senha e o clique no link é o que prova o endereço.
 - Não apontar `DATABASE_URL` para o dono do banco — o RLS deixa de valer. Veja "Multi-tenancy".
+- Não emitir sessão num callback de OAuth sem checar `twoFactorEnabled` — o `TwoFactorGateGuard`
+  não cobre isso, e o login social viraria um jeito de pular o segundo fator.
 - Não usar `@SystemScope()` fora das rotas de autenticação, nem aceitar `tenantId` do cliente.
 - Não usar `this.prisma.<model>` direto nos services: é `this.prisma.db.<model>`, que carrega o escopo.
 - Não enfileirar job com `systemWide: true` só para "funcionar" — sem tenant o RLS não devolve

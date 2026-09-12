@@ -90,6 +90,8 @@ model Tenant {
   profiles         Profile[]
   auditLogs        AuditLog[]
   legalAcceptances LegalAcceptance[]
+  invitations      Invitation[]
+  oauthAccounts    OAuthAccount[]
 
   @@index([status])
   @@index([planId])
@@ -153,7 +155,12 @@ model User {
   /// discovered from the user. The trade-off is that one person needs two
   /// e-mails to work for two companies.
   email               String    @unique
-  passwordHash        String
+  /// Null for an account that only signs in through a provider. Password login
+  /// on such an account fails with the ordinary invalid-credentials error — the
+  /// same one a wrong password gets — so it never becomes an oracle telling an
+  /// attacker which addresses are social-only. `forgot-password` still works
+  /// and is the supported way to add a password later.
+  passwordHash        String?
   name                String
   avatarUrl           String?
   role                Role      @default(USER)
@@ -177,6 +184,9 @@ model User {
   backupCodes         TwoFactorBackupCode[]
   auditLogs           AuditLog[]
   legalAcceptances    LegalAcceptance[]
+  oauthAccounts       OAuthAccount[]
+  invitationsSent     Invitation[]            @relation("InvitationsSent")
+  invitationAccepted  Invitation[]            @relation("InvitationAccepted")
 
   @@index([tenantId])
   @@index([email])
@@ -199,6 +209,7 @@ model Profile {
 
   users       User[]
   permissions Permission[]
+  invitations Invitation[]
 
   @@unique([tenantId, code])
   @@index([tenantId])

@@ -69,12 +69,14 @@ observabilidade e testes.
 
 ### O que já vem pronto
 
-- **Empresas** — cadastro self-service em `POST /auth/signup`: cria o tenant, os perfis de sistema e o primeiro admin numa única transação, com o aceite dos termos gravado como evidência (documento, versão, data/hora, IP e user agent).
+- **Empresas** — cadastro self-service em `POST /auth/signup`: cria o tenant, os perfis de sistema e o primeiro admin numa única transação, com o aceite dos termos gravado como evidência (documento, versão, data/hora, IP e user agent). **Desligável** com `PUBLIC_SIGNUP_ENABLED`, para deploy interno ou produto vendido por time comercial.
+- **Convites** — a única porta para uma empresa que já existe. O ADMIN convida, o convidado escolhe a própria senha, e o clique no link mailado é o que prova o endereço — ninguém digita a senha de outra pessoa.
+- **Login social** — Google, Apple e GitHub, opcionais e desligados por padrão, um por um. `passwordHash` é nullable: conta social não tem senha.
 - **Contas** — verificação de e-mail por código, reset de senha, troca de e-mail por código, exportação dos próprios dados e exclusão da conta.
 - **Sessões** — gerenciamento de sessões ativas: veja seus dispositivos e revogue qualquer um.
 - **Controle de acesso** — perfis por empresa com matriz de permissões, painel `/admin` para o ADMIN da empresa e audit log imutável de quem fez o quê.
 - **Planos** — plano padrão com trial, `maxUsers` e contadores nomeados, impostos de verdade na hora de criar.
-- **Back-office do operador** — painel em `/platform` sobre `/api/platform/*`: estatísticas da base, suspender/reativar empresa, estender trial, trocar plano e CRUD de planos.
+- **Back-office do operador** — painel em `/platform` sobre `/api/platform/*`: estatísticas da base, **criar empresa** (que convida o primeiro admin em vez de definir senha para ele), suspender/reativar empresa, estender trial, trocar plano e CRUD de planos.
 - **Perfis e arquivos** — perfis editáveis e uploads atrás de um driver de storage trocável.
 - **i18n** — pt-BR + en-US com seletor de bandeira SVG; chaves mantidas em paridade por testes.
 - **Temas** — claro/escuro guiados inteiramente por tokens CSS, não por edição de telas.
@@ -181,6 +183,33 @@ A seção completa, com as armadilhas de guard e transação, está no [CLAUDE.m
 > [!WARNING]
 > A camada de serialização nunca retorna `passwordHash` nem `twoFactorSecret`. O interceptor e o
 > `UserDto` garantem isso por construção.
+
+**Quem entra, e por onde.** Três portas, e duas delas são decisão de deploy:
+
+| Porta          | Liga/desliga com                         | Cria empresa?            |
+| -------------- | ---------------------------------------- | ------------------------ |
+| Signup público | `PUBLIC_SIGNUP_ENABLED` (default `true`) | sim                      |
+| Convite        | sempre disponível                        | não                      |
+| Login social   | `OAUTH_PROVIDERS` (vazio = desligado)    | só via convite ou signup |
+
+**Convites** são a única entrada para uma empresa que já existe. O convidado escolhe a própria
+senha; o inviter nunca a conhece, e o clique no link é o que prova o endereço — antes, o ADMIN
+digitava a senha do colega e a conta nascia verificada na palavra dele. O token cru vive só no
+e-mail (o banco guarda o SHA-256), o e-mail sai **depois** do commit, e o limite de plano é cobrado
+no **aceite**, que é onde o assento é consumido.
+
+**Login social** com Google, Apple e GitHub, opcional por provider. A chave da identidade é o
+`providerAccountId` imutável, nunca o e-mail; endereço não verificado pelo provedor não vincula
+nada; e login com senha numa conta social devolve o mesmo erro genérico, pagando o mesmo custo de
+Argon2, para não virar oráculo de enumeração. Uma identidade desconhecida não vira empresa sozinha:
+passa por uma tela que pede nome e slug, porque provedor nenhum tem como saber isso.
+
+> [!WARNING]
+> As duas metades precisam concordar. `PUBLIC_SIGNUP_ENABLED` / `NEXT_PUBLIC_SIGNUP_ENABLED` em
+> desacordo renderizam um formulário cujo submit sempre dá 403; `OAUTH_PROVIDERS` /
+> `NEXT_PUBLIC_OAUTH_PROVIDERS` em desacordo rendem um botão que sempre dá 404. E
+> `OAUTH_CALLBACK_BASE_URL` precisa bater **caractere a caractere** com o redirect URI registrado em
+> cada provider. A API recusa subir se um provider listado estiver sem credencial.
 
 **Captcha.** Port `CaptchaProvider` com guard global; as rotas marcadas com `@RequireCaptcha()` são
 signup, resend-verification, login, forgot-password e reset-password.
@@ -335,12 +364,14 @@ with it — alongside auth, 2FA, profiles, file uploads, i18n, theming, observab
 
 ### What comes built in
 
-- **Companies** — self-serve signup at `POST /auth/signup`: it creates the tenant, its system profiles and the first admin in a single transaction, recording the legal acceptance as evidence (document, version, timestamp, IP and user agent).
+- **Companies** — self-serve signup at `POST /auth/signup`: it creates the tenant, its system profiles and the first admin in a single transaction, recording the legal acceptance as evidence (document, version, timestamp, IP and user agent). It can be **turned off** with `PUBLIC_SIGNUP_ENABLED`, for an internal deployment or a sales-led product.
+- **Invitations** — the only door into a company that already exists. The admin invites, the invitee chooses their own password, and clicking the mailed link is what proves the address — nobody types somebody else's password.
+- **Social sign-in** — Google, Apple and GitHub, optional and off by default, one by one. `passwordHash` is nullable: a social account has no password.
 - **Accounts** — email verification by code, password reset, email change by code, self-service data export and account deletion.
 - **Sessions** — active-session management: see your devices and revoke any of them.
 - **Access control** — per-company profiles with a permission matrix, an `/admin` panel for the company ADMIN, and an immutable audit log of who did what.
 - **Plans** — a default plan with a trial, `maxUsers` and named counters, actually enforced at creation time.
-- **Operator back-office** — a `/platform` panel over `/api/platform/*`: customer-base stats, suspending and reactivating a company, extending a trial, changing its plan, and plan CRUD.
+- **Operator back-office** — a `/platform` panel over `/api/platform/*`: customer-base stats, **creating a company** (which invites its first admin rather than setting a password for them), suspending and reactivating a company, extending a trial, changing its plan, and plan CRUD.
 - **Profiles & files** — editable profiles and uploads behind a swappable storage driver.
 - **i18n** — pt-BR + en-US with an SVG flag switcher; keys kept in parity by tests.
 - **Theming** — dark/light driven entirely by CSS tokens, not screen edits.
@@ -449,6 +480,35 @@ The full section, with the guard and transaction pitfalls, is in [CLAUDE.md](./C
 > [!WARNING]
 > The serialisation layer never returns a `passwordHash` or a `twoFactorSecret`. The interceptor and
 > `UserDto` enforce that by construction.
+
+**Who gets in, and through which door.** Three doors, two of them a deployment decision:
+
+| Door           | Toggled by                               | Creates a company?            |
+| -------------- | ---------------------------------------- | ----------------------------- |
+| Public signup  | `PUBLIC_SIGNUP_ENABLED` (default `true`) | yes                           |
+| Invitation     | always available                         | no                            |
+| Social sign-in | `OAUTH_PROVIDERS` (empty = off)          | only via invitation or signup |
+
+**Invitations** are the only way into a company that already exists. The invitee picks their own
+password, the inviter never learns it, and clicking the link is what proves the address — the old
+flow had the admin typing a colleague's password and the account being born verified on the admin's
+word. The raw token lives only in the email (the database holds its SHA-256), the mail goes out
+**after** the commit, and the plan limit is charged at **acceptance**, which is where the seat is
+consumed.
+
+**Social sign-in** with Google, Apple and GitHub, optional per provider. The identity key is the
+immutable `providerAccountId`, never the email; an address the provider has not verified links
+nothing; and a password login against a social account returns the same generic error, paying the
+same Argon2 cost, so it never becomes an enumeration oracle. An unknown identity does not turn into
+a company on its own: it goes through a screen asking for a name and a slug, because no provider has
+any way of knowing those.
+
+> [!WARNING]
+> Both halves must agree. `PUBLIC_SIGNUP_ENABLED` / `NEXT_PUBLIC_SIGNUP_ENABLED` out of sync render
+> a form whose every submit answers 403; `OAUTH_PROVIDERS` / `NEXT_PUBLIC_OAUTH_PROVIDERS` out of
+> sync render a button that always 404s. And `OAUTH_CALLBACK_BASE_URL` must match the redirect URI
+> registered with each provider **character for character**. The API refuses to boot if a listed
+> provider is missing its credentials.
 
 **Captcha.** A `CaptchaProvider` port with a global guard; the routes tagged `@RequireCaptcha()` are
 signup, resend-verification, login, forgot-password and reset-password.

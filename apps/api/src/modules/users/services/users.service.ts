@@ -33,7 +33,7 @@ import type { MailMessage } from '../../../core/mail/mail.provider';
 import { QUEUE_PROVIDER, type QueueProvider } from '../../../core/queue/queue.provider';
 import { TwoFactorService } from '../../auth/services/two-factor.service';
 import { TokenService } from '../../auth/services/token.service';
-import { generateNumericCode, sha256 } from '../../auth/support/crypto.util';
+import { generateNumericCode, sha256, verifyPassword } from '../../auth/support/crypto.util';
 import { verificationCodeEmail, type EmailLocale } from '../../auth/support/email-templates';
 import { toUserDto } from '../../auth/support/user.mapper';
 
@@ -102,7 +102,7 @@ export class UsersService {
   ): Promise<void> {
     const user = await this.requireActiveUser(userId);
 
-    const currentOk = await argon2.verify(user.passwordHash, input.currentPassword);
+    const currentOk = await verifyPassword(user.passwordHash, input.currentPassword);
     if (!currentOk) {
       // Re-auth failure stays terse — leaks nothing about the account.
       throw new UnauthorizedException('Current password is incorrect');
@@ -207,7 +207,7 @@ export class UsersService {
     const accepted = input.code
       ? await this.twoFactor.verifyTotp(user.twoFactorSecret, input.code)
       : input.password
-        ? await argon2.verify(user.passwordHash, input.password)
+        ? await verifyPassword(user.passwordHash, input.password)
         : false;
     if (!accepted) {
       throw new UnauthorizedException('Verification failed');
@@ -303,7 +303,7 @@ export class UsersService {
   ): Promise<void> {
     const user = await this.requireActiveUser(userId);
 
-    const passwordOk = await argon2.verify(user.passwordHash, input.password);
+    const passwordOk = await verifyPassword(user.passwordHash, input.password);
     if (!passwordOk) {
       throw new UnauthorizedException('Current password is incorrect');
     }

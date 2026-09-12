@@ -56,7 +56,10 @@
       "submit": "Create company",
       "hasAccount": "Already have an account?",
       "signin": "Sign in",
-      "success": "Company created! Check your email to confirm."
+      "success": "Company created! Check your email to confirm.",
+      "closedTitle": "Registration closed",
+      "closedBody": "This system does not accept public registration of new companies.",
+      "closedInvite": "Access is by invitation. If you are expecting one, look for the invitation email; if you already have an account, just sign in."
     },
     "forgot": {
       "title": "Reset your password",
@@ -92,6 +95,35 @@
       "required": "Please confirm you are not a robot to continue.",
       "failed": "We could not validate the challenge. Try again.",
       "unavailable": "Verification is unavailable right now. Try again shortly."
+    },
+    "oauth": {
+      "separator": "or",
+      "continueWith": "Continue with {provider}",
+      "provider": {
+        "google": "Google",
+        "apple": "Apple",
+        "github": "GitHub"
+      },
+      "errors": {
+        "failed": "We could not complete sign-in with that provider. Try again.",
+        "unverified_email": "The provider has not confirmed that email address. Use another way to sign in.",
+        "no_account": "There is no account for that email.",
+        "signup_disabled": "Registering new companies is turned off.",
+        "account_conflict": "That account cannot sign in through this provider.",
+        "provider_disabled": "That provider is not available in this environment."
+      }
+    },
+    "completeSignup": {
+      "title": "Finish your registration",
+      "subtitle": "All that is left is naming the company. Don’t Panic.",
+      "identityNotice": "Your email was already confirmed by the provider and cannot be edited here. You will always sign in through it — there is no password to set.",
+      "taxId": "Tax ID",
+      "companyPhone": "Company phone",
+      "personLegend": "You",
+      "termsLink": "Terms of Use",
+      "privacyLink": "Privacy Policy",
+      "submit": "Create company",
+      "ticketExpired": "This completion link has expired or was already used. Start the registration again."
     }
   },
   "dashboard": {
@@ -104,7 +136,10 @@
         "title": "Secure by default",
         "body": "JWT, 2FA, CSRF, rate-limit and audit logging included."
       },
-      "i18n": { "title": "Multilingual", "body": "pt-BR and en-US ready — switch with the flag." },
+      "i18n": {
+        "title": "Multilingual",
+        "body": "pt-BR and en-US ready — switch with the flag."
+      },
       "swappable": {
         "title": "Everything pluggable",
         "body": "Swap database, storage and email with one variable."
@@ -120,14 +155,21 @@
   "profile": {
     "title": "Profile",
     "subtitle": "Manage your account and security.",
-    "tabs": { "general": "General", "security": "Security" },
+    "tabs": {
+      "general": "General",
+      "security": "Security"
+    },
     "avatar": {
       "title": "Profile photo",
       "upload": "Upload image",
       "remove": "Remove",
       "hint": "PNG, JPG or WebP up to 5MB."
     },
-    "nameSection": { "title": "Name", "save": "Save name", "updated": "Name updated." },
+    "nameSection": {
+      "title": "Name",
+      "save": "Save name",
+      "updated": "Name updated."
+    },
     "email": {
       "title": "Email",
       "change": "Change email",
@@ -206,13 +248,47 @@
     "pageInfo": "Page {page} of {total}",
     "prev": "Previous",
     "next": "Next",
-    "newUser": "New user",
-    "create": {
-      "title": "New user",
-      "subtitle": "The account is created already verified.",
+    "inviteUser": "Invite user",
+    "invite": {
+      "title": "Invite user",
+      "subtitle": "They get an email and choose their own password.",
       "role": "Role",
-      "submit": "Create user",
-      "created": "User created."
+      "profile": "Permission profile",
+      "profileDefault": "Company default profile",
+      "nameHint": "Only to pre-fill the accept form — they can change it.",
+      "explainer": "Nobody here sets someone else’s password: the invitation is a single-use link, and accepting it is what proves the address is theirs.",
+      "submit": "Send invitation",
+      "sent": "Invitation sent.",
+      "duplicate": "There is already a user or a pending invitation for that email.",
+      "invalid": "Check the fields: some value is not accepted by the invitation contract."
+    },
+    "invitations": {
+      "title": "Invitations",
+      "subtitle": "Invitations sent by this company.",
+      "tableCaption": "Invitations sent by the company",
+      "colInvitee": "Invitee",
+      "colRole": "Role",
+      "colStatus": "Status",
+      "colExpires": "Expires",
+      "colInvitedBy": "Invited by",
+      "colActions": "Actions",
+      "empty": "No invitations sent.",
+      "status": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "REVOKED": "Revoked",
+        "EXPIRED": "Expired"
+      },
+      "resend": "Resend the invitation to {email}",
+      "revoke": "Revoke the invitation to {email}",
+      "resent": "Invitation resent.",
+      "revoked": "Invitation revoked.",
+      "revokeTitle": "Revoke invitation",
+      "revokeConfirm": "Revoke the invitation to {email}? The link already sent stops working immediately.",
+      "revokeAction": "Revoke",
+      "pageInfo": "Page {page} of {total}",
+      "prev": "Previous",
+      "next": "Next"
     }
   },
   "session": {
@@ -449,7 +525,51 @@
       "planChanged": "Plan changed.",
       "trialExtended": "Trial extended.",
       "planCreated": "Plan created.",
-      "planUpdated": "Plan updated."
+      "planUpdated": "Plan updated.",
+      "tenantCreatedInvited": "Company created and the administrator has been invited.",
+      "tenantCreatedNoInvite": "Company created. No invitation has been sent yet."
+    },
+    "createTenant": {
+      "newTenant": "New company",
+      "title": "New company",
+      "subtitle": "Register the company and invite its first administrator.",
+      "companyLegend": "The company",
+      "companyName": "Company name",
+      "slug": "Address (slug)",
+      "legalName": "Legal name",
+      "taxId": "Tax ID",
+      "email": "Company email",
+      "emailHint": "The company’s contact and billing address — not the administrator’s.",
+      "phone": "Phone",
+      "commercialLegend": "Commercial terms",
+      "plan": "Plan",
+      "noPlan": "No plan",
+      "status": "Initial status",
+      "trialDays": "Trial days",
+      "trialDaysPlaceholder": "Use the plan’s own",
+      "currency": "Currency",
+      "locale": "Language",
+      "timezone": "Time zone",
+      "adminLegend": "The first administrator",
+      "adminName": "Administrator name",
+      "adminEmail": "Administrator email",
+      "noPasswordNotice": "The administrator gets an invitation, not a password: the link is single-use and they choose their own password when they accept. Nobody here ever knows the customer’s credential.",
+      "sendInvitation": "Send the invitation now",
+      "sendInvitationOn": "The invitation goes out by email as soon as the company is created.",
+      "sendInvitationOff": "The company is created and nobody is emailed now. The invitation can be sent later.",
+      "submit": "Create company",
+      "invalid": "Check the fields: some value is not accepted by the contract."
     }
+  },
+  "invite": {
+    "title": "You have been invited to {company}",
+    "subtitle": "Choose your password to create your access.",
+    "company": "Company",
+    "submit": "Accept invitation",
+    "invalidTitle": "Invitation unavailable",
+    "invalid": "This invitation is no longer valid.",
+    "invalidHint": "It may have expired, already been used, or been cancelled. Ask the company administrator for a new one.",
+    "termsLink": "Terms of Use",
+    "privacyLink": "Privacy Policy"
   }
 }

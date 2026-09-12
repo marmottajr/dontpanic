@@ -9,11 +9,13 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { TenantsTable } from '@/components/platform/tenants-table';
+import { CreateTenantDialog } from '@/components/platform/create-tenant-dialog';
 import { SuspendTenantDialog } from '@/components/platform/suspend-tenant-dialog';
 import { ChangePlanDialog } from '@/components/platform/change-plan-dialog';
 import { ExtendTrialDialog } from '@/components/platform/extend-trial-dialog';
 import {
   useChangeTenantPlan,
+  useCreateTenant,
   useExtendTrial,
   usePlatformAccess,
   usePlatformDeniedRedirect,
@@ -29,6 +31,7 @@ const PAGE_SIZE = 20;
 export default function PlatformTenantsPage() {
   const t = useTranslations('platform.tenants');
   const tToast = useTranslations('platform.toast');
+  const tCreate = useTranslations('platform.createTenant');
   const tc = useTranslations('common');
   const tErr = useTranslations('errors');
   const { allowed } = usePlatformAccess();
@@ -45,11 +48,13 @@ export default function PlatformTenantsPage() {
   usePlatformDeniedRedirect(error);
   const { data: plans } = usePlatformPlans(allowed);
 
+  const [creating, setCreating] = useState(false);
   const [suspending, setSuspending] = useState<PlatformTenantDto | null>(null);
   const [reactivating, setReactivating] = useState<PlatformTenantDto | null>(null);
   const [changingPlan, setChangingPlan] = useState<PlatformTenantDto | null>(null);
   const [extending, setExtending] = useState<PlatformTenantDto | null>(null);
 
+  const createTenant = useCreateTenant();
   const suspend = useSuspendTenant();
   const reactivate = useReactivateTenant();
   const changePlan = useChangeTenantPlan();
@@ -62,9 +67,12 @@ export default function PlatformTenantsPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <header className="space-y-1">
-        <h1 className="font-display text-3xl font-bold tracking-tight">{t('title')}</h1>
-        <p className="font-mono text-sm text-muted-foreground">{t('subtitle')}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="font-display text-3xl font-bold tracking-tight">{t('title')}</h1>
+          <p className="font-mono text-sm text-muted-foreground">{t('subtitle')}</p>
+        </div>
+        <Button onClick={() => setCreating(true)}>{tCreate('newTenant')}</Button>
       </header>
 
       <TenantsTable
@@ -107,6 +115,29 @@ export default function PlatformTenantsPage() {
           </Button>
         </div>
       ) : null}
+
+      <CreateTenantDialog
+        open={creating}
+        onOpenChange={setCreating}
+        plans={plans ?? []}
+        loading={createTenant.isPending}
+        onSubmit={(input) => {
+          createTenant.mutate(input, {
+            onSuccess: (result) => {
+              setCreating(false);
+              // Two different outcomes, and the operator has to be able to tell
+              // them apart: a company whose administrator was invited, and one
+              // sitting there with nobody told about it yet.
+              toast.success(
+                result.invitationSent
+                  ? tToast('tenantCreatedInvited')
+                  : tToast('tenantCreatedNoInvite'),
+              );
+            },
+            onError: fail,
+          });
+        }}
+      />
 
       <SuspendTenantDialog
         open={Boolean(suspending)}

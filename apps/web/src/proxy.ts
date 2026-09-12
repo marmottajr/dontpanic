@@ -12,6 +12,12 @@ const PRE_AUTH_PREFIXES = [
   '/forgot-password',
   '/reset-password',
   '/verify-email',
+  // Accepting an invitation IS a registration — it creates the account and
+  // signs it in — so it belongs with `/signup` and not with the open pages.
+  // Someone who already has a session and opens an invite link is sent home
+  // rather than shown a form that would build a second account under the first
+  // one's cookies.
+  '/invite',
 ];
 
 /**

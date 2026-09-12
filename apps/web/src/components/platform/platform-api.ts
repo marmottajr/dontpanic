@@ -8,6 +8,8 @@ import type {
   ExtendTrialInput,
   Paginated,
   PlanDto,
+  PlatformCreateTenantInput,
+  PlatformCreateTenantResponse,
   PlatformStatsDto,
   PlatformTenantDto,
   SuspendTenantInput,
@@ -140,6 +142,24 @@ function useInvalidatePlatform() {
   return () => {
     void qc.invalidateQueries({ queryKey: ['platform'] });
   };
+}
+
+/**
+ * Creating a company on a customer's behalf.
+ *
+ * The response says whether the first administrator's invitation actually went
+ * out — with `sendInvitation` off, or with a mail provider that refused it,
+ * the company exists and nobody has been told. The screen has to be able to say
+ * which of the two happened, so the flag is carried through rather than
+ * collapsed into "created".
+ */
+export function useCreateTenant() {
+  const invalidate = useInvalidatePlatform();
+  return useMutation({
+    mutationFn: (input: PlatformCreateTenantInput) =>
+      api<PlatformCreateTenantResponse>(PLATFORM_ROUTES.tenants, { method: 'POST', body: input }),
+    onSuccess: invalidate,
+  });
 }
 
 export function useSuspendTenant() {
