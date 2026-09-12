@@ -18,6 +18,7 @@ pnpm --filter @dontpanic/shared build      # contratos compartilhados
 pnpm --filter @dontpanic/api db:migrate     # cria o schema
 pnpm --filter @dontpanic/api db:seed        # cria o admin inicial
 pnpm dev                       # API :4201 · Web :4200  (Don't Panic.)
+pnpm --filter @dontpanic/api worker:dev   # noutro terminal: sem ele, e-mail não sai
 ```
 
 Admin do seed: **admin@dontpanic.dev** / **DontPanic42!**
@@ -56,6 +57,7 @@ Trocar de provider = trocar uma variável, sem tocar na lógica.
 | Cache   | `CacheProvider`        | `redis`, `memory`                      | `CACHE_DRIVER`   |
 | Banco   | repos + Prisma adapter | `postgresql`, `mysql`, `sqlite`        | `DB_PROVIDER`    |
 | Captcha | `CaptchaProvider`      | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
+| Jobs    | `QueueProvider`        | `bullmq`, `memory`                     | `QUEUE_DRIVER`   |
 
 - Adapters ficam em `apps/api/src/infra/**`; ports em `apps/api/src/core/**`.
 - Banco usa **Prisma 7 driver adapters** (`@prisma/adapter-pg` p/ Postgres). Trocar o banco =
@@ -138,6 +140,48 @@ produto**. O boilerplate traz `settings`, `users` e `audit`.
 pedidos criam o último assento" se resolve com `pg_advisory_xact_lock` por empresa **e por recurso**,
 dentro da transação — contar antes de gravar não basta, porque contar não tranca nada. Feature flag
 ausente, malformada ou falsa significa **não**: o engano tem que cair para o lado restritivo.
+
+---
+
+## Fila de jobs — trabalho que não pode morrer com o request
+
+> **Para agentes de IA:** o ponto perigoso aqui é o **escopo de tenant**. Um job roda fora de
+> qualquer request, então não herda escopo nenhum: ler sem reestabelecê-lo faz o RLS devolver zero
+> linhas e o job termina "com sucesso" tendo visto um banco vazio. Quem cuida disso é o `JobRouter`
+> — não contorne.
+
+`QUEUE_DRIVER=bullmq` põe o trabalho no Redis e um processo **separado** consome
+(`pnpm --filter @dontpanic/api worker`). A separação é o objetivo: um SMTP lento não atrasa
+resposta, e job que falha é repetido em vez de perdido junto com o request.
+
+`QUEUE_DRIVER=memory` roda inline em quem enfileirou — para testes e para `pnpm dev` sem worker.
+**Não é uma fila**: sem durabilidade, sem retry, sem processo separado. Em produção, ou o worker
+sobe, ou o e-mail simplesmente não sai.
+
+### Como funciona
+
+- **O catálogo é tipado.** Nome e payload são declarados juntos em `core/queue/jobs.ts`, e
+  `JobEnvelope` é união discriminada — o `never` no `default` do `JobRouter` faz o build falhar se
+  alguém adicionar um job sem handler.
+- **O tenant viaja com o job.** Capturado no `enqueue`, a partir do `TenantContext` do request —
+  não no handler, que já não teria como saber. `systemWide: true` força `tenantId: null` e é a
+  exceção estreita: só manutenção que atravessa empresas, tão deliberada quanto `@SystemScope()`.
+- **Erro propaga.** O handler deixa a exceção subir; é isso que faz o BullMQ repetir. Engolir
+  transformaria retry em perda silenciosa.
+- **`jobId` deduplica.** Enfileirar o mesmo id enquanto o primeiro está pendente é no-op — é o que
+  impede um request repetido de mandar dois e-mails.
+
+### Ao adicionar um job
+
+1. Uma linha em `JobPayloads`. 2. Um `case` no `JobRouter` — o compilador acha o resto.
+2. Pergunte-se se ele precisa de tenant: se sim (quase sempre), **não** passe `systemWide`.
+
+### Em produção
+
+O worker sai na **mesma imagem** da API — o `nest build` emite `dist/worker.js` ao lado do
+`dist/main.js`. Suba um segundo container sobrescrevendo o comando para `node dist/worker.js`.
+**Só o container da API roda migration**; dois processos disputando a mesma migration é como um
+deploy corrompe o próprio histórico de schema.
 
 ---
 
@@ -336,4 +380,7 @@ nem aparece em erro de segurança real. Mantenha sóbrio onde importa.
 - Não apontar `DATABASE_URL` para o dono do banco — o RLS deixa de valer. Veja "Multi-tenancy".
 - Não usar `@SystemScope()` fora das rotas de autenticação, nem aceitar `tenantId` do cliente.
 - Não usar `this.prisma.<model>` direto nos services: é `this.prisma.db.<model>`, que carrega o escopo.
+- Não enfileirar job com `systemWide: true` só para "funcionar" — sem tenant o RLS não devolve
+  nada e o job mente que deu certo. Veja "Fila de jobs".
+- Não subir produção com `QUEUE_DRIVER=memory`: e-mail nenhum sai se o worker não existir.
 - **Não fazer `git commit` nem `git push` por conta própria** — só commitar/pushar quando o Marcio pedir explicitamente. Pode editar arquivos à vontade; deixar o versionamento para quando ele solicitar.

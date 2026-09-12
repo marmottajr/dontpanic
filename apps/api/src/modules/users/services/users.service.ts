@@ -29,11 +29,8 @@ import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { TenantContext } from '../../../infra/tenancy/tenant-context';
 import { CACHE_PROVIDER, type CacheProvider } from '../../../core/cache/cache.provider';
-import {
-  MAIL_PROVIDER,
-  type MailMessage,
-  type MailProvider,
-} from '../../../core/mail/mail.provider';
+import type { MailMessage } from '../../../core/mail/mail.provider';
+import { QUEUE_PROVIDER, type QueueProvider } from '../../../core/queue/queue.provider';
 import { TwoFactorService } from '../../auth/services/two-factor.service';
 import { TokenService } from '../../auth/services/token.service';
 import { generateNumericCode, sha256 } from '../../auth/support/crypto.util';
@@ -62,17 +59,21 @@ export class UsersService {
     private readonly tokenService: TokenService,
     private readonly config: ConfigService<Env, true>,
     @Inject(CACHE_PROVIDER) private readonly cache: CacheProvider,
-    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
+    @Inject(QUEUE_PROVIDER) private readonly queue: QueueProvider,
   ) {}
 
   /**
-   * Send transactional mail WITHOUT blocking the request. A slow SMTP host must
-   * not slow the API response; failures are logged, not surfaced (resend flows
-   * exist). Swap this for a durable queue (e.g. BullMQ) behind the same call.
+   * Hand transactional mail to the queue instead of sending it inline.
+   *
+   * Three things change by doing this: a slow SMTP host no longer slows the
+   * response, a transient failure is retried instead of logged and forgotten,
+   * and the work survives the process dying mid-request. Enqueuing itself can
+   * still fail (Redis down), and that is logged rather than surfaced — the
+   * resend and forgot-password flows are the recovery path.
    */
   private dispatchMail(message: MailMessage): void {
-    void this.mail.send(message).catch((err) => {
-      this.logger.warn(`Mail dispatch failed (${message.subject}): ${String(err)}`);
+    void this.queue.enqueue('mail.send', { message }).catch((err) => {
+      this.logger.warn(`Could not enqueue mail (${message.subject}): ${String(err)}`);
     });
   }
 

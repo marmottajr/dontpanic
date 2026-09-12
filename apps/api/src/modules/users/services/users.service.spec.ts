@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -21,7 +22,7 @@ describe('UsersService', () => {
   let tokenService: any;
   let cache: any;
   let config: any;
-  let mail: any;
+  let queue: any;
   let service: UsersService;
 
   const mockedArgon = argon2 as jest.Mocked<typeof argon2>;
@@ -64,8 +65,8 @@ describe('UsersService', () => {
     };
 
     config = { get: jest.fn().mockReturnValue(false) }; // 2FA optional by default
-    mail = { send: jest.fn().mockResolvedValue(undefined) };
-    service = new UsersService(prisma, twoFactor, tokenService, config, cache, mail);
+    queue = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    service = new UsersService(prisma, twoFactor, tokenService, config, cache, queue);
   });
 
   describe('getSecurityStatus', () => {
@@ -286,7 +287,20 @@ describe('UsersService', () => {
         expect.stringContaining('new@x.com'),
         expect.any(Number),
       );
-      expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({ to: 'new@x.com' }));
+      // Mail is enqueued, not sent: what the flow produces now is a job.
+      expect(queue.enqueue).toHaveBeenCalledTimes(1);
+      const [name, payload] = queue.enqueue.mock.calls[0];
+      expect(name).toBe('mail.send');
+      expect(payload.message).toEqual(
+        expect.objectContaining({
+          // Addressed to the NEW address — mailing the current one would let
+          // anyone holding the session confirm a change the owner never saw.
+          to: 'new@x.com',
+          subject: expect.any(String),
+          html: expect.any(String),
+          text: expect.any(String),
+        }),
+      );
     });
 
     it('rejects a wrong password', async () => {
@@ -316,14 +330,21 @@ describe('UsersService', () => {
       );
     });
 
-    it('does not fail the request when mail dispatch rejects', async () => {
+    it('does not fail the request when enqueuing the mail rejects', async () => {
       prisma.user.findUnique
         .mockResolvedValueOnce(makeUser({ id: 'u1', email: 'old@x.com' }))
         .mockResolvedValueOnce(null);
       mockedArgon.verify.mockResolvedValue(true);
-      mail.send.mockRejectedValue(new Error('smtp down'));
+      queue.enqueue.mockRejectedValue(new Error('redis down'));
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
       await expect(service.requestEmailChange('u1', input as never, ctx)).resolves.toBeUndefined();
       await new Promise((resolve) => setImmediate(resolve)); // flush the fire-and-forget catch
+
+      // A queue outage is logged, never surfaced: the user can ask again, and
+      // failing the request would roll nothing back anyway.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('redis down'));
+      warn.mockRestore();
     });
   });
 

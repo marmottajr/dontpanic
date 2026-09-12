@@ -21,4 +21,11 @@ COPY --from=build /app /app
 WORKDIR /app/apps/api
 EXPOSE 4201
 # Run migrations then boot. (Drop the migrate step if you deploy migrations separately.)
+# The worker ships in this SAME image — `nest build` emits dist/worker.js next
+# to dist/main.js. Run a second container from it overriding the command:
+#
+#   command: ["node", "dist/worker.js"]
+#
+# Only the API container migrates; two processes racing the same migration is
+# how a deploy corrupts its own schema history.
 CMD ["sh", "-c", "node ../../node_modules/prisma/build/index.js migrate deploy && node dist/main.js"]

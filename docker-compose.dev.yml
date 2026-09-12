@@ -80,6 +80,34 @@ services:
       deps:
         condition: service_completed_successfully
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: dontpanic-worker-dev
+    working_dir: /app/apps/api
+    # No migrate here: the api service owns that, and two processes racing the
+    # same migration is how a deploy corrupts its own schema history.
+    command: >-
+      sh -c "pnpm run worker:dev"
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://dontpanic_app:dontpanic_app@postgres:5432/dontpanic?schema=public
+      DATABASE_ADMIN_URL: postgresql://dontpanic:dontpanic@postgres:5432/dontpanic?schema=public
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      TRUST_PROXY: uniquelocal
+      CHOKIDAR_USEPOLLING: 'true'
+    volumes: *app-volumes
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
   web:
     build:
       context: .
