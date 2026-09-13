@@ -82,14 +82,27 @@ describe('TenantContext', () => {
     it('keeps two concurrent requests on their own tenant', async () => {
       // The case that matters most: two requests interleaved in the same
       // process must never see each other's tenant.
+      //
+      // The interleaving is forced by hand, not by timers. Racing `delay(5)`,
+      // `delay(1)` and `delay(3)` and expecting them back in that order made the
+      // test depend on the event loop keeping millisecond timers apart — which a
+      // loaded CI runner does not promise, so it failed with the isolation intact.
+      // Each request now parks on a gate opened in a fixed order, and a macrotask
+      // between openings lets the resumed request finish before the next one wakes.
       const seen: string[] = [];
-      const request = (tenantId: string, wait: number): Promise<void> =>
+      const gates = new Map<string, () => void>();
+      const request = (tenantId: string): Promise<void> =>
         TenantContext.run({ scope: { kind: 'tenant', tenantId } }, async () => {
-          await delay(wait);
+          await new Promise<void>((open) => gates.set(tenantId, open));
           seen.push(TenantContext.requireTenantId());
         });
 
-      await Promise.all([request('a', 5), request('b', 1), request('c', 3)]);
+      const running = Promise.all([request('a'), request('b'), request('c')]);
+      for (const tenantId of ['b', 'c', 'a']) {
+        gates.get(tenantId)?.();
+        await delay(0);
+      }
+      await running;
 
       expect(seen).toEqual(['b', 'c', 'a']);
     });
