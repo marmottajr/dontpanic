@@ -15,6 +15,34 @@
 -- With no context at all nothing is visible (fail-closed): `current_setting(…,
 -- true)` returns NULL and the comparison is never true.
 -- ═══════════════════════════════════════════════════════════════════════════
+--
+-- ── Nota de manutenção: por que este arquivo foi editado NO LUGAR ──────────
+-- O bloco "Profile children" no fim do arquivo ganhou uma guarda `IF EXISTS`
+-- depois de a migration já ter sido aplicada em bancos de desenvolvimento, o
+-- que muda o checksum que o Prisma guarda em `_prisma_migrations`. As duas
+-- saídas foram consideradas:
+--
+--   (a) uma migration nova que redefinisse o bloco com a guarda — preserva o
+--       checksum, MAS não conserta nada: o defeito é a migration **falhar**, e
+--       uma migration posterior nunca chega a rodar se a anterior aborta. Num
+--       clone que não tenha a tabela `permissions`, o `migrate deploy` morre
+--       aqui e o conserto ficaria eternamente atrás da porta que ele mesmo
+--       tranca. Corrigir um erro de aplicação só é possível no arquivo que o
+--       comete.
+--
+--   (b) editar no lugar — escolhido. O DontPanic é boilerplate: o caso que
+--       importa é o clone novo, que aplica tudo do zero e nunca vê o arquivo
+--       antigo. A publicação do instalador foi aposentada e não há instalação
+--       em produção presa a este checksum. Para quem JÁ migrou, a edição é
+--       semanticamente um no-op — onde `permissions` existia, a guarda passa e
+--       o DDL executado é byte a byte o mesmo —, então o único efeito é o aviso
+--       de checksum. Quem o encontrar resolve com
+--       `prisma migrate resolve --applied 20260911105200_row_level_security`
+--       (ou recriando o banco de teste, que é descartável).
+--
+-- Regra para o futuro: migration que já saiu para produção NÃO se edita. Esta
+-- ainda não saiu, e a exceção termina aqui.
+-- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE SCHEMA IF NOT EXISTS app;
 
@@ -122,20 +150,40 @@ CREATE OR REPLACE FUNCTION app.apply_user_owned_rls() RETURNS void
 SELECT app.apply_user_owned_rls();
 
 -- ── Profile children, linked by profileId ──────────────────────────────────
+-- Mesma disciplina de `app.apply_user_owned_rls()` logo acima: cada entrada da
+-- lista é verificada no catálogo ANTES do DDL.
+--
+-- PORQUÊ a guarda: sem ela, o `ALTER TABLE` corre de cara e a migration inteira
+-- morre com `relation "public.permissions" does not exist` se a tabela não
+-- estiver lá. O `DROP POLICY IF EXISTS` abaixo já era guardado — a incoerência
+-- era só do `ALTER`. E "não estar lá" não é hipótese remota num boilerplate:
+-- basta um clone remover o modelo `Permission` (ou renomear a tabela) para o
+-- `migrate` explodir num arquivo que ele nunca leu. Pior, o estrago é no meio
+-- do caminho: as políticas de tenant já aplicadas acima ficam, a deste bloco
+-- não — banco meio protegido, migration marcada como falha.
+--
+-- A guarda é `IF EXISTS`, não um `CREATE TABLE IF NOT EXISTS`: se a tabela não
+-- existe, não há nada a proteger, e pular é o comportamento correto. O que NÃO
+-- se pode fazer é pular em silêncio uma tabela que existe — por isso a lista é
+-- explícita e o teste `rls-coverage.e2e-spec.ts` cobra, do catálogo, que toda
+-- tabela ligada a tenant (direta ou por `profileId`) esteja de fato protegida.
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['permissions'] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
-    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
-    EXECUTE format(
-      'CREATE POLICY tenant_isolation ON public.%I
-         USING (EXISTS (SELECT 1 FROM public.profiles p
-                        WHERE p.id = %I."profileId" AND app.tenant_visible(p."tenantId")))
-         WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p
-                        WHERE p.id = %I."profileId" AND app.tenant_visible(p."tenantId")))',
-      t, t, t);
+    IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = 'public' AND c.relname = t AND c.relkind = 'r') THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
+      EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
+      EXECUTE format(
+        'CREATE POLICY tenant_isolation ON public.%I
+           USING (EXISTS (SELECT 1 FROM public.profiles p
+                          WHERE p.id = %I."profileId" AND app.tenant_visible(p."tenantId")))
+           WITH CHECK (EXISTS (SELECT 1 FROM public.profiles p
+                          WHERE p.id = %I."profileId" AND app.tenant_visible(p."tenantId")))',
+        t, t, t);
+    END IF;
   END LOOP;
 END $$;
 
