@@ -27,6 +27,7 @@ describe('TokenService', () => {
       updateMany: jest.Mock;
       update: jest.Mock;
     };
+    tenant: { findUnique: jest.Mock };
   };
   let service: TokenService;
 
@@ -45,6 +46,7 @@ describe('TokenService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
+      tenant: { findUnique: jest.fn().mockResolvedValue(null) },
     });
     service = new TokenService(jwt as never, makeConfig(), prisma as never);
   });
@@ -104,6 +106,53 @@ describe('TokenService', () => {
       const data = prisma.refreshToken.create.mock.calls[0][0].data;
       expect(data.ip).toBeNull();
       expect(data.userAgent).toBeNull();
+    });
+  });
+
+  // The plan's `concurrentSessions` flag, which until now existed everywhere
+  // (column, enum, wire reason, i18n) except at the moment it was supposed to
+  // act. It acts here, at the single point where a session is born, so the
+  // password, 2FA and OAuth doors cannot each drift their own copy of it.
+  describe('issueTokensForUser (single session per plan)', () => {
+    const member = { id: 'u1', email: 'a@b.com', role: 'USER' as const, tenantId: 't1' };
+
+    it('ends every other session when the plan does not grant concurrent ones', async () => {
+      prisma.tenant.findUnique.mockResolvedValue({ plan: { features: {} } });
+
+      await service.issueTokensForUser(member);
+
+      const kept = prisma.refreshToken.create.mock.calls[0][0].data.familyId;
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null, NOT: { familyId: kept } },
+        data: { revokedAt: expect.any(Date), revokedReason: 'SIGNED_IN_ELSEWHERE' },
+      });
+    });
+
+    it('spares the family it just created, so the new sign-in survives', async () => {
+      prisma.tenant.findUnique.mockResolvedValue({ plan: { features: {} } });
+      await service.issueTokensForUser(member);
+      const where = prisma.refreshToken.updateMany.mock.calls[0][0].where;
+      expect(where.NOT.familyId).toBe(prisma.refreshToken.create.mock.calls[0][0].data.familyId);
+    });
+
+    it('leaves other sessions alone when the plan grants concurrent sessions', async () => {
+      prisma.tenant.findUnique.mockResolvedValue({
+        plan: { features: { concurrentSessions: true } },
+      });
+      await service.issueTokensForUser(member);
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('treats a tenant with no plan as not granting them', async () => {
+      prisma.tenant.findUnique.mockResolvedValue({ plan: null });
+      await service.issueTokensForUser(member);
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalled();
+    });
+
+    it('leaves a user with no company (SUPERADMIN) alone — there is no plan to read', async () => {
+      await service.issueTokensForUser(user);
+      expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });
 

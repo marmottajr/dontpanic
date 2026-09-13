@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma, User } from '@prisma/client';
 import type { AdminUser, AdminUserList, PaginationQuery, Role } from '@dontpanic/shared';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PlanLimitsService } from '../tenants/services/plan-limits.service';
 import { TokenService } from '../auth/services/token.service';
 
 /** Request context for audit logging the acting admin's actions. */
@@ -32,6 +33,7 @@ export class AdminUsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private toAdminUser(u: User): AdminUser {
@@ -43,6 +45,7 @@ export class AdminUsersService {
       emailVerified: u.emailVerified,
       twoFactorEnabled: u.twoFactorEnabled,
       locked: Boolean(u.lockedUntil && u.lockedUntil > new Date()),
+      active: u.active,
       deleted: Boolean(u.deletedAt),
       createdAt: u.createdAt.toISOString(),
     };
@@ -117,6 +120,60 @@ export class AdminUsersService {
     // closest stored reason: the ending was deliberate, not a replay.
     if (locked) await this.tokenService.revokeAllForUser(targetId, 'LOGOUT');
     await this.audit(locked ? 'admin.user_locked' : 'admin.user_unlocked', adminId, ctx, {
+      targetId,
+    });
+    return this.toAdminUser(updated);
+  }
+
+  /**
+   * Turn a colleague's access off, or back on — the non-destructive counterpart
+   * of the delete below.
+   *
+   * `active` is the seat: PlanLimitsService counts only active, non-deleted
+   * users, so switching someone off frees a seat and switching them back on
+   * takes one. Which is precisely why reactivation has to ask the plan first.
+   * Without that check the limit is walked around in two clicks — deactivate
+   * everybody, invite new people into the seats that just freed up, reactivate
+   * the originals — and a company ends up with more paid seats than it bought.
+   *
+   * The check runs INSIDE the same transaction as the write. Counting outside
+   * it would lock nothing: two admins reactivating the last seat at the same
+   * instant would both count `used = limit - 1` and both pass. Inside, the
+   * `pg_advisory_xact_lock` PlanLimitsService takes makes the second wait for
+   * the first and count again — same discipline the invitation accept follows.
+   *
+   * Deactivating also ends the sessions: leaving a live access token behind
+   * would mean the account keeps working for up to JWT_ACCESS_TTL after being
+   * switched off. LOGOUT is the closest stored reason — the ending was
+   * deliberate, not a replay.
+   */
+  async setActive(
+    adminId: string,
+    targetId: string,
+    active: boolean,
+    ctx: AdminContext,
+  ): Promise<AdminUser> {
+    if (adminId === targetId) {
+      throw new BadRequestException("You can't deactivate your own account");
+    }
+
+    const updated = await this.prisma.atomic(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: targetId } });
+      if (!user) throw new NotFoundException('User not found');
+      // A deleted account has no seat to give back and must not be revived by
+      // a route whose whole job is flipping a boolean.
+      if (user.deletedAt) throw new BadRequestException('That user has been deleted');
+      // Already in the target state: return as-is rather than paying for a
+      // seat the user already holds.
+      if (user.active === active) return user;
+
+      if (active) await this.planLimits.assertCanAddUser(tx);
+
+      return tx.user.update({ where: { id: targetId }, data: { active } });
+    });
+
+    if (!active) await this.tokenService.revokeAllForUser(targetId, 'LOGOUT');
+    await this.audit(active ? 'admin.user_activated' : 'admin.user_deactivated', adminId, ctx, {
       targetId,
     });
     return this.toAdminUser(updated);

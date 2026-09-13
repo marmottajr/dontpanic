@@ -78,6 +78,32 @@ export class AdminUsersController {
     return this.adminUsers.setLocked(admin.id, id, false, this.ctx(req));
   }
 
+  @Post(':id/deactivate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Free the seat: switch a user off and revoke their sessions' })
+  async deactivate(
+    @CurrentUser() admin: AuthUser,
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+  ): Promise<AdminUser> {
+    return this.adminUsers.setActive(admin.id, id, false, this.ctx(req));
+  }
+
+  // Separate from `unlock` on purpose: locking is a security state the
+  // brute-force lockout also writes, while `active` is the seat on the plan.
+  // Reactivating can therefore be REFUSED when the plan is full, which is a
+  // thing unlocking must never do.
+  @Post(':id/activate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Take a seat back: switch a user on if the plan has room' })
+  async activate(
+    @CurrentUser() admin: AuthUser,
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+  ): Promise<AdminUser> {
+    return this.adminUsers.setActive(admin.id, id, true, this.ctx(req));
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Soft-delete a user and revoke their sessions' })

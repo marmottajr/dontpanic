@@ -32,6 +32,20 @@ export function useTenant() {
   });
 }
 
+/**
+ * The mutations below — and `useBranding`/`useUpdateBranding` — have no caller
+ * in the boilerplate yet: the company settings screen is one of the screens a
+ * product is expected to design for itself.
+ *
+ * They are kept rather than deleted because each one wraps a route that already
+ * EXISTS and is tested (`PATCH /tenants/me`, `GET|PUT /tenants/me/branding`).
+ * That is the difference between a hook and a promise: nothing here claims a
+ * capability the API lacks, it just saves whoever builds that screen from
+ * rediscovering the endpoints, the query keys and the cache invalidation. A
+ * contract for a route that does not answer would be the other thing, and that
+ * one gets deleted — see the note where the linked-accounts DTO used to be, in
+ * @dontpanic/shared.
+ */
 export function useUpdateTenant() {
   const qc = useQueryClient();
   return useMutation({
@@ -63,13 +77,14 @@ export function useUpdateBranding() {
 export const PLAN_QUERY_KEY = ['tenant', 'plan'] as const;
 
 /**
- * The contracted plan and its limits.
+ * The contracted plan and its commercial fields.
  *
- * The API does not expose this route yet — `/tenants/me/plan-usage` carries the
- * numbers the screens actually need today. The query is kept because the plan's
- * commercial fields (price, trial length) belong here rather than in the usage
- * counters, and it fails quietly (`retry: false`) so a screen that asks for it
- * before the route exists renders without it instead of breaking.
+ * Separate from `usePlanUsage` on purpose: price, currency and trial length
+ * describe what the company BOUGHT, while the usage counters describe what it
+ * is spending. Screens almost always want one or the other, so they are two
+ * routes and two cache entries rather than one fat object refetched whenever
+ * either half moves. Fails quietly (`retry: false`): the shell renders without
+ * the plan, it just stops being able to name it.
  */
 export function usePlan() {
   return useQuery({

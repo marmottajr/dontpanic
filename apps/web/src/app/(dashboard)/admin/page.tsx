@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Lock, LockOpen, Trash2 } from 'lucide-react';
+import { Lock, LockOpen, Trash2, UserCheck, UserMinus } from 'lucide-react';
 import type { AdminUser, AdminUserList } from '@dontpanic/shared';
 import { useUser } from '@/hooks/use-auth';
 import { api, ApiError } from '@/lib/api';
@@ -66,6 +66,23 @@ export default function AdminPage() {
     mutationFn: (u: AdminUser) =>
       api(`/admin/users/${u.id}/${u.locked ? 'unlock' : 'lock'}`, { method: 'POST' }),
     onSuccess: () => void refresh(),
+    onError: fail,
+  });
+
+  // Deliberately NOT the same button as lock/unlock. Locking is a security
+  // state — the brute-force lockout writes it too — while `active` is the seat
+  // on the company's plan: deactivating frees one, and reactivating can be
+  // REFUSED by the API when the plan is full. Folding them together would mean
+  // an automatic lockout silently changing what the company is billed for.
+  const toggleActive = useMutation({
+    mutationFn: (u: AdminUser) =>
+      api(`/admin/users/${u.id}/${u.active ? 'deactivate' : 'activate'}`, { method: 'POST' }),
+    onSuccess: (_data, u) => {
+      toast.success(u.active ? t('deactivated') : t('activated'));
+      void refresh();
+    },
+    // Reactivation is the one action here that fails for a reason the admin can
+    // act on ("the plan is full"), so the API's message is what gets shown.
     onError: fail,
   });
 
@@ -147,6 +164,7 @@ export default function AdminPage() {
                   </td>
                   <td className="space-x-1 px-4 py-3">
                     {u.deleted && <Badge variant="destructive">{t('deletedTag')}</Badge>}
+                    {!u.active && !u.deleted && <Badge variant="outline">{t('inactiveTag')}</Badge>}
                     {u.locked && <Badge variant="outline">{t('lockedTag')}</Badge>}
                     {u.twoFactorEnabled && <Badge variant="outline">2FA</Badge>}
                     {!u.emailVerified && <Badge variant="outline">{t('unverifiedTag')}</Badge>}
@@ -169,6 +187,19 @@ export default function AdminPage() {
                         aria-label={u.locked ? t('unlock') : t('lock')}
                       >
                         {u.locked ? <LockOpen className="size-4" /> : <Lock className="size-4" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={u.id === me?.id || u.deleted || toggleActive.isPending}
+                        onClick={() => toggleActive.mutate(u)}
+                        aria-label={u.active ? t('deactivate') : t('activate')}
+                      >
+                        {u.active ? (
+                          <UserMinus className="size-4" />
+                        ) : (
+                          <UserCheck className="size-4" />
+                        )}
                       </Button>
                       <Button
                         size="sm"

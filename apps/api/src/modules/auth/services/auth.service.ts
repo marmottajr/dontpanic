@@ -240,15 +240,24 @@ export class AuthService {
     // that only signs in through a provider. It answers false and pays the same
     // Argon2 cost, so social-only accounts are indistinguishable from wrong
     // passwords both in the message below and on the clock.
+    // `active` is the seat on the company's plan, and an account without one
+    // must not be able to sign in — otherwise deactivating somebody frees a
+    // seat while leaving their access exactly as it was, which turns the plan
+    // limit into an honour system. It is folded into the SAME generic rejection
+    // as a deleted account, and pays the same Argon2 cost, so the login form
+    // never becomes an oracle telling an outsider which addresses exist but are
+    // switched off.
+    const usable = Boolean(user && !user.deletedAt && user.active);
+
     let passwordOk: boolean;
-    if (user && !user.deletedAt) {
+    if (user && usable) {
       passwordOk = await verifyPassword(user.passwordHash, input.password);
     } else {
       await argon2.verify(await DUMMY_PASSWORD_HASH, input.password);
       passwordOk = false;
     }
 
-    if (!user || user.deletedAt || !passwordOk) {
+    if (!user || !usable || !passwordOk) {
       await this.registerFailedAttempt(lockKey, lockDuration, maxAttempts, user?.id ?? null);
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -355,7 +364,10 @@ export class AuthService {
     }
 
     const user = await this.prisma.db.user.findUnique({ where: { id: userId } });
-    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+    // `!user.active` matters even though login already refused an inactive
+    // account: the ticket outlives the check that minted it, so an admin can
+    // switch someone off in the seconds between the password and the code.
+    if (!user || !user.active || !user.twoFactorEnabled || !user.twoFactorSecret) {
       throw new UnauthorizedException('Invalid or expired 2FA challenge');
     }
 
@@ -426,7 +438,10 @@ export class AuthService {
     }
 
     const user = await this.prisma.db.user.findUnique({ where: { id: record.userId } });
-    if (!user || user.deletedAt) {
+    // Deactivating revokes the refresh tokens, but a token issued moments
+    // before could still be in flight; refusing to rotate it is what caps the
+    // leftover access at one access-token lifetime instead of a whole week.
+    if (!user || user.deletedAt || !user.active) {
       throw new UnauthorizedException('Invalid session');
     }
 

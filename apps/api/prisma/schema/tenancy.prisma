@@ -14,14 +14,25 @@ model Plan {
   priceCents   Int     @default(0)
   currency     String  @default("BRL")
   trialDays    Int     @default(14)
+  /// Seats. ENFORCED by PlanLimitsService, on every door a user comes through
+  /// (invitation accepted, account reactivated); null means unlimited.
   maxUsers     Int?
+  /// Commercial metadata, NOT enforced — like priceCents above, it describes
+  /// what was sold, and nothing in the code refuses an upload because of it.
+  /// Enforcing it would need a per-tenant byte ledger (written on upload,
+  /// decremented on delete, reconciled against the bucket), and the only thing
+  /// this boilerplate uploads is one avatar per user, capped at 5 MB by the
+  /// multipart parser. Build the ledger with the feature that needs it, and
+  /// enforce it in PlanLimitsService next to the seat count.
   maxStorageMb Int?
   /// Product-specific counters, e.g. `{"projects": 10}`. Enforced by
-  /// PlanLimitsService; null or absent means unlimited.
+  /// PlanLimitsService.assertCanAddResource, once the module that owns the
+  /// resource has registered a counter for it; null or absent means unlimited.
   limits       Json    @default("{}")
-  /// Feature flags read by the plan guard, e.g. `{"concurrentSessions": true}`.
-  /// Absent, malformed or false all mean NO — a plan nobody touched must not
-  /// open a door by accident.
+  /// Feature flags, e.g. `{"concurrentSessions": true}`. Absent, malformed or
+  /// false all mean NO — a plan nobody touched must not open a door by
+  /// accident. `concurrentSessions` is enforced in TokenService: a plan without
+  /// it gets one live session, and signing in anywhere ends the others.
   features     Json    @default("{}")
   sortOrder    Int     @default(0)
   /// The plan a public signup lands on. Exactly one plan should carry it.
