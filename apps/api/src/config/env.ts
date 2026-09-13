@@ -7,9 +7,19 @@ const boolish = (def: boolean) =>
     .transform((v) => (typeof v === 'string' ? v === 'true' || v === '1' : v))
     .default(def);
 
+/**
+ * Every default below is the value .env.example carries, and the ports are the
+ * project's 42xx range on purpose.
+ *
+ * They used to be the framework defaults (3001/3000/6379/9000/1025), which meant
+ * a lean `.env` that simply omitted a key pointed the API at a port where
+ * nothing of this project listens. That does not fail at boot — the schema is
+ * satisfied — it fails later, at the first query, mail or upload, as a
+ * connection error nobody connects back to a missing line in a file.
+ */
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  API_PORT: z.coerce.number().default(3001),
+  API_PORT: z.coerce.number().default(4201),
   API_HOST: z.string().default('0.0.0.0'),
 
   // The runtime connection. MUST point at the restricted role: a superuser (or
@@ -19,7 +29,7 @@ export const envSchema = z.object({
   // The database owner, used only by migrate/seed, which do DDL. Optional so a
   // runtime container never needs the privileged credentials.
   DATABASE_ADMIN_URL: z.string().default(''),
-  REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
+  REDIS_URL: z.string().min(1).default('redis://localhost:4203'),
 
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
@@ -34,8 +44,8 @@ export const envSchema = z.object({
   COOKIE_SECURE: boolish(false),
   CSRF_SECRET: z.string().min(16),
 
-  WEB_ORIGIN: z.string().default('http://localhost:3000'),
-  API_PUBLIC_URL: z.string().default('http://localhost:3001'),
+  WEB_ORIGIN: z.string().default('http://localhost:4200'),
+  API_PUBLIC_URL: z.string().default('http://localhost:4201'),
 
   TOTP_ISSUER: z.string().default('DontPanic'),
   // true: 2FA is mandatory — users must set it up right after verifying email
@@ -49,24 +59,24 @@ export const envSchema = z.object({
 
   // --- mail ---
   MAIL_HOST: z.string().default('localhost'),
-  MAIL_PORT: z.coerce.number().default(1025),
+  MAIL_PORT: z.coerce.number().default(4206),
   MAIL_SECURE: boolish(false),
   MAIL_USER: z.string().default(''),
   MAIL_PASSWORD: z.string().default(''),
   MAIL_FROM: z.string().default('DontPanic <no-reply@dontpanic.dev>'),
 
   // --- s3 / minio ---
-  S3_ENDPOINT: z.string().default('http://localhost:9000'),
+  S3_ENDPOINT: z.string().default('http://localhost:4204'),
   S3_REGION: z.string().default('us-east-1'),
   S3_BUCKET: z.string().default('dontpanic'),
   S3_ACCESS_KEY: z.string().default('minioadmin'),
   S3_SECRET_KEY: z.string().default('minioadmin'),
   S3_FORCE_PATH_STYLE: boolish(true),
-  S3_PUBLIC_URL: z.string().default('http://localhost:9000/dontpanic'),
+  S3_PUBLIC_URL: z.string().default('http://localhost:4204/dontpanic'),
 
   // --- local storage adapter ---
   LOCAL_STORAGE_DIR: z.string().default('./storage'),
-  LOCAL_STORAGE_PUBLIC_URL: z.string().default('http://localhost:3001/files'),
+  LOCAL_STORAGE_PUBLIC_URL: z.string().default('http://localhost:4201/files'),
 
   // --- ses adapter ---
   AWS_REGION: z.string().default('us-east-1'),
