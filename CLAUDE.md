@@ -147,6 +147,40 @@ pedidos criam o último assento" se resolve com `pg_advisory_xact_lock` por empr
 dentro da transação — contar antes de gravar não basta, porque contar não tranca nada. Feature flag
 ausente, malformada ou falsa significa **não**: o engano tem que cair para o lado restritivo.
 
+**O que é imposto de verdade, e o que não é** — a distinção importa porque prometer limite e não
+cumprir é pior que não prometer:
+
+| Campo do plano                | Imposto?                                                                |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `maxUsers`                    | **sim** — no aceite do convite e na **reativação** de conta             |
+| `limits` (nomeados)           | **sim**, para cada recurso que um módulo tiver registrado (veja abaixo) |
+| `features.concurrentSessions` | **sim** — no `TokenService`, no nascimento da sessão                    |
+| `maxStorageMb`                | **não** — é metadado comercial, igual a `priceCents` e `trialDays`      |
+
+- **O assento é `User.active`, não `lockedUntil`.** Bloquear é estado de **segurança** (e o lockout
+  por força bruta também escreve ali); `active` é o estado **comercial**. Se fossem a mesma coisa,
+  um lockout automático mudaria o que a empresa paga. `POST /admin/users/:id/deactivate` libera o
+  assento e revoga as sessões; `/activate` só devolve o assento se o plano couber, e a checagem roda
+  **dentro da mesma transação** que grava — contar fora dela não tranca nada. Conta inativa não
+  loga, não passa no 2FA e não renova refresh: senão desativar mexeria na conta e em mais nada.
+- **Sessão única é o default.** `concurrentSessions` ausente ou falso significa uma sessão viva por
+  usuário: entrar em qualquer lugar encerra as outras, com `SIGNED_IN_ELSEWHERE` gravado e a tela de
+  "sua sessão terminou" explicando. O plano que quiser multi-dispositivo declara
+  `features: {"concurrentSessions": true}` — inclusive o `free` do seed, se o seu produto quiser
+  isso. A regra vive no `TokenService.issueTokensForUser`, o **único** ponto onde uma sessão nasce,
+  para que senha, 2FA e OAuth não carreguem cada um a sua cópia.
+- **`maxStorageMb` é vitrine, não limite.** Impor exigiria um livro-razão de bytes por empresa
+  (escrito no upload, decrementado no delete, reconciliado com o bucket), e o único upload que o
+  boilerplate tem é um avatar por usuário, limitado a 5 MB no parser. Construa o livro-razão junto
+  com a funcionalidade que precisar dele.
+- **`registerResource` é o gancho, e está vazio de propósito.** É por isso que `assertCanAddResource`
+  não tem call site: `users` é embutido porque todo SaaS tem usuários, e não existe um segundo
+  recurso até um produto inventar um. Três passos, documentados no docblock do método: registre o
+  contador no `onModuleInit` do módulo dono, ponha o teto em `Plan.limits`, e chame
+  `assertCanAddResource(nome, tx)` na mesma transação que cria a linha — em **toda** porta pela qual
+  o recurso nasce. Nome não registrado **lança**, para que um typo seja barulhento em vez de
+  silenciosamente ilimitado.
+
 ---
 
 ## Fila de jobs — trabalho que não pode morrer com o request
@@ -495,7 +529,14 @@ Por que não dá para simplificar:
 - `pnpm audit --audit-level high` roda no CI e **falha o build**. Se ele ficar vermelho, o conserto é
   subir a dependência, não afrouxar o gate. Transitiva sem correção no pai vai para `overrides` no
   `pnpm-workspace.yaml`, com o link do advisory no comentário.
-- `minimumReleaseAge` no `pnpm-workspace.yaml` evita adotar releases recém-publicados (supply-chain).
+- `minimumReleaseAge` no `pnpm-workspace.yaml` (**4320 minutos, 3 dias**) evita adotar releases
+  recém-publicados: quase todo sequestro de conta no npm é notado e despublicado em horas ou
+  poucos dias, e não ser o primeiro a instalar derruba boa parte do risco de graça. O pnpm
+  verifica **todas** as entradas do lockfile, não só as novas, então uma janela maior rejeitaria
+  dezenas de transitivas banais (o `@aws-sdk` republica quase diariamente) — e a saída seria uma
+  exclude-list impossível de auditar ou desligar a política, que foi como ela acabou documentada
+  e ausente. Patch de CVE que não pode esperar entra em `minimumReleaseAgeExclude` como
+  `nome@versão`, com comentário: a dispensa é de um pacote, nunca da política.
 - Build scripts nativos são aprovados explicitamente em `allowBuilds` / `onlyBuiltDependencies`.
 
 ### Travas deliberadas — não suba sem checar
@@ -584,6 +625,12 @@ nem aparece em erro de segurança real. Mantenha sóbrio onde importa.
   não cobre isso, e o login social viraria um jeito de pular o segundo fator.
 - Não usar `@SystemScope()` fora das rotas de autenticação, nem aceitar `tenantId` do cliente.
 - Não usar `this.prisma.<model>` direto nos services: é `this.prisma.db.<model>`, que carrega o escopo.
+- Não reativar usuário sem passar pelo `assertCanAddUser` **dentro da mesma transação** que grava:
+  contar fora dela não tranca nada e o limite do plano vira sugestão, com consequência financeira.
+- Não confundir `lockedUntil` (segurança, escrito também pelo lockout automático) com `active`
+  (assento no plano). Juntar os dois faz um ataque de força bruta mudar o que a empresa paga.
+- Não servir arquivo estático com `STORAGE_DRIVER=s3`: os arquivos estão no bucket, e a rota seria
+  superfície aberta sem nada atrás. O `@fastify/static` só é registrado no driver `local`.
 - Não enfileirar job com `systemWide: true` só para "funcionar" — sem tenant o RLS não devolve
   nada e o job mente que deu certo. Veja "Fila de jobs".
 - Não subir produção com `QUEUE_DRIVER=memory`: e-mail nenhum sai se o worker não existir.

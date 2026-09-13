@@ -2,6 +2,7 @@
 import './load-env';
 import './instrument';
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ConfigService } from '@nestjs/config';
@@ -12,9 +13,11 @@ import helmet from '@fastify/helmet';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCsrf from '@fastify/csrf-protection';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import type { preHandlerHookHandler } from 'fastify';
 import { AppModule } from './app.module';
 import { parseTrustProxy, type Env } from './config/env';
+import { localStaticPrefix } from './infra/storage/local-static';
 import { registerOAuthFormPostParser, skipsCsrf } from './modules/auth/oauth/oauth-form-post';
 
 async function bootstrap(): Promise<void> {
@@ -94,6 +97,28 @@ async function bootstrap(): Promise<void> {
   await app.register(fastifyMultipart, {
     limits: { fileSize: 5_000_000, files: 1 },
   });
+
+  // Only for STORAGE_DRIVER=local. With `s3` the files live in a bucket and
+  // mounting a directory here would be a static-file surface serving nothing —
+  // an open door with no reason to be open. With `local` it is the other half
+  // of the driver: LocalStorageAdapter writes into LOCAL_STORAGE_DIR and hands
+  // back URLs under LOCAL_STORAGE_PUBLIC_URL, and without this registration
+  // those URLs answered 404, which made the "ready-made alternative" the docs
+  // advertise simply not work.
+  if (config.get('STORAGE_DRIVER', { infer: true }) === 'local') {
+    await app.register(fastifyStatic, {
+      root: resolve(config.get('LOCAL_STORAGE_DIR', { infer: true })),
+      prefix: localStaticPrefix(config.get('LOCAL_STORAGE_PUBLIC_URL', { infer: true })),
+      // The directory holds what users uploaded, so serve files and nothing
+      // else: no directory listing, no index fallback, no dotfiles.
+      index: false,
+      list: false,
+      serveDotFiles: false,
+      // The reply decorator is global and would collide with any other plugin
+      // that wants `reply.sendFile`; this mount only needs the route.
+      decorateReply: false,
+    });
+  }
 
   app.enableCors({
     origin: config.get('WEB_ORIGIN', { infer: true }),

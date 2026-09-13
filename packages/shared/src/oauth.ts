@@ -103,10 +103,15 @@ export const completeOAuthSignupResponseSchema = z.object({
 });
 export type CompleteOAuthSignupResponse = z.infer<typeof completeOAuthSignupResponseSchema>;
 
-/** One linked social account, for the security section of the profile page. */
-export const oauthAccountDtoSchema = z.object({
-  provider: oauthProviderSchema,
-  email: z.string().nullable(),
-  linkedAt: z.string().datetime(),
-});
-export type OAuthAccountDto = z.infer<typeof oauthAccountDtoSchema>;
+// There is deliberately no "linked social accounts" DTO here.
+//
+// One used to sit at this spot, described as the contract for the security
+// section of the profile page — a screen that was never built, served by a
+// route that was never written. A response schema for an endpoint nobody
+// answers is a promise in the contract package, and this package is precisely
+// where api and web come to agree on what exists.
+//
+// Building that screen means deciding what unlinking does when the social
+// account is the only way the user can sign in (`passwordHash` is nullable,
+// so "just use your password" is not always available). That decision belongs
+// with the feature, and the contract belongs right next to it.

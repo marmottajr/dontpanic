@@ -152,6 +152,13 @@ export const planDtoSchema = z.object({
   currency: z.string(),
   trialDays: z.number().int(),
   maxUsers: z.number().int().nullable(),
+  /**
+   * Commercial metadata, not a limit the API enforces — the same status
+   * `priceCents` and `trialDays` have. Show it as part of what the plan
+   * offers; do not write a screen that implies an upload will be refused,
+   * because nothing refuses it. See the note on `Plan.maxStorageMb` in the
+   * Prisma schema for what enforcing it would take.
+   */
   maxStorageMb: z.number().int().nullable(),
   active: z.boolean(),
 });

@@ -15,6 +15,7 @@ const userRow = (over: Record<string, unknown> = {}) => ({
   emailVerified: true,
   twoFactorEnabled: false,
   lockedUntil: null,
+  active: true,
   deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   ...over,
@@ -23,6 +24,7 @@ const userRow = (over: Record<string, unknown> = {}) => ({
 describe('AdminUsersService', () => {
   let prisma: any;
   let tokenService: any;
+  let planLimits: any;
   let service: AdminUsersService;
   const mockedArgon = argon2 as jest.Mocked<typeof argon2>;
 
@@ -40,7 +42,8 @@ describe('AdminUsersService', () => {
       auditLog: { create: jest.fn().mockResolvedValue({}) },
     });
     tokenService = { revokeAllForUser: jest.fn().mockResolvedValue(undefined) };
-    service = new AdminUsersService(prisma, tokenService);
+    planLimits = { assertCanAddUser: jest.fn().mockResolvedValue(undefined) };
+    service = new AdminUsersService(prisma, tokenService, planLimits);
   });
 
   describe('list', () => {
@@ -118,6 +121,83 @@ describe('AdminUsersService', () => {
       await expect(service.setLocked('u1', 'u1', true, ctx)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+  });
+
+  describe('setActive', () => {
+    it('deactivates: writes active=false, revokes the sessions and audits', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2' }));
+      prisma.user.update.mockResolvedValue(userRow({ id: 'u2', active: false }));
+
+      const res = await service.setActive('admin1', 'u2', false, ctx);
+
+      expect(res.active).toBe(false);
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u2' },
+        data: { active: false },
+      });
+      // Freeing the seat has to end the access too, or the account keeps
+      // working for a whole access-token lifetime after being switched off.
+      expect(tokenService.revokeAllForUser).toHaveBeenCalledWith('u2', 'LOGOUT');
+      expect(planLimits.assertCanAddUser).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create.mock.calls[0][0].data.action).toBe('admin.user_deactivated');
+    });
+
+    it('reactivates only after the plan is asked, inside the same transaction', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2', active: false }));
+      prisma.user.update.mockResolvedValue(userRow({ id: 'u2', active: true }));
+
+      const res = await service.setActive('admin1', 'u2', true, ctx);
+
+      expect(res.active).toBe(true);
+      expect(planLimits.assertCanAddUser).toHaveBeenCalledWith(prisma);
+      // The same client the write goes through: counting outside the
+      // transaction would take the advisory lock away from the write it exists
+      // to protect.
+      expect(prisma.atomic).toHaveBeenCalled();
+      expect(tokenService.revokeAllForUser).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create.mock.calls[0][0].data.action).toBe('admin.user_activated');
+    });
+
+    it('refuses the reactivation when the plan has no seat left', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2', active: false }));
+      planLimits.assertCanAddUser.mockRejectedValue(new BadRequestException('plan full'));
+
+      await expect(service.setActive('admin1', 'u2', true, ctx)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the account is already in the target state', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2', active: true }));
+
+      const res = await service.setActive('admin1', 'u2', true, ctx);
+
+      expect(res.active).toBe(true);
+      expect(planLimits.assertCanAddUser).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to deactivate yourself', async () => {
+      await expect(service.setActive('u1', 'u1', false, ctx)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('throws NotFound for an unknown user', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.setActive('admin1', 'nope', true, ctx)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('refuses to revive a deleted account', async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ id: 'u2', deletedAt: new Date() }));
+      await expect(service.setActive('admin1', 'u2', true, ctx)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(planLimits.assertCanAddUser).not.toHaveBeenCalled();
     });
   });
 

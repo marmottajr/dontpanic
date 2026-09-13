@@ -84,6 +84,16 @@ export const adminUserSchema = z.object({
   emailVerified: z.boolean(),
   twoFactorEnabled: z.boolean(),
   locked: z.boolean(),
+  /**
+   * Whether the account holds a seat on the company's plan.
+   *
+   * Distinct from `locked` on purpose. Locking is a SECURITY state and it is
+   * also set automatically by the brute-force lockout, so it can never be
+   * allowed to move a billing counter. `active` is the COMMERCIAL state: an
+   * inactive account cannot sign in and does not consume a seat, which is what
+   * lets an admin free a seat without the destructive, anonymising delete.
+   */
+  active: z.boolean(),
   deleted: z.boolean(),
   createdAt: z.string(),
 });

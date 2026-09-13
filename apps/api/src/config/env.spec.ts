@@ -15,16 +15,31 @@ describe('validateEnv', () => {
   it('parses a valid env and applies defaults', () => {
     const env = validateEnv(baseConfig());
     expect(env.NODE_ENV).toBe('development');
-    expect(env.API_PORT).toBe(3001);
     expect(env.API_HOST).toBe('0.0.0.0');
     expect(env.JWT_ACCESS_TTL).toBe(900);
     expect(env.JWT_REFRESH_TTL).toBe(604800);
     expect(env.STORAGE_DRIVER).toBe('s3');
     expect(env.MAIL_DRIVER).toBe('smtp');
     expect(env.CACHE_DRIVER).toBe('redis');
-    expect(env.REDIS_URL).toBe('redis://localhost:6379');
     expect(env.TOTP_ISSUER).toBe('DontPanic');
     expect(env.LOGIN_MAX_ATTEMPTS).toBe(5);
+  });
+
+  // Every default that names a port has to be the project's own 42xx value.
+  // When they were the framework defaults (3001/3000/6379/9000/1025) a .env
+  // that simply omitted a key still passed validation and then failed much
+  // later, as a connection error to a port where nothing of ours listens —
+  // the kind of failure nobody traces back to a missing line in a file.
+  it('defaults every address to the 42xx range .env.example documents', () => {
+    const env = validateEnv(baseConfig());
+    expect(env.API_PORT).toBe(4201);
+    expect(env.REDIS_URL).toBe('redis://localhost:4203');
+    expect(env.WEB_ORIGIN).toBe('http://localhost:4200');
+    expect(env.API_PUBLIC_URL).toBe('http://localhost:4201');
+    expect(env.MAIL_PORT).toBe(4206);
+    expect(env.S3_ENDPOINT).toBe('http://localhost:4204');
+    expect(env.S3_PUBLIC_URL).toBe('http://localhost:4204/dontpanic');
+    expect(env.LOCAL_STORAGE_PUBLIC_URL).toBe('http://localhost:4201/files');
   });
 
   it('throws a helpful error when a required secret is missing', () => {

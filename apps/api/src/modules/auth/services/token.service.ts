@@ -6,6 +6,7 @@ import type { SessionEndReason } from '@prisma/client';
 import type { Role } from '@dontpanic/shared';
 import type { Env } from '../../../config/env';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { planAllowsConcurrentSessions } from '../../tenants/services/plan-limits.service';
 import { generateRawToken, sha256 } from '../support/crypto.util';
 
 /** Claims carried by the access JWT. `sub` is the user id (RFC 7519). */
@@ -75,7 +76,46 @@ export class TokenService {
     ctx: IssueContext = {},
   ): Promise<IssuedTokens> {
     const familyId = randomUUID();
-    return this.mint(user, familyId, ctx);
+    const tokens = await this.mint(user, familyId, ctx);
+    await this.enforceSingleSession(user, familyId);
+    return tokens;
+  }
+
+  /**
+   * The plan's `concurrentSessions` flag, finally doing something.
+   *
+   * A plan that does not grant concurrent sessions gets exactly one live
+   * session: signing in anywhere ends every other one. That is the whole point
+   * of the flag commercially — without it a single basic-plan login is shared
+   * by a whole team and the seat count stops describing anything.
+   *
+   * It runs HERE rather than in `login` because this method is the one place a
+   * session is born, and the three doors that reach it (password, 2FA verify,
+   * OAuth callback) must not each carry their own copy of the rule; a copy is
+   * how "entrar com o Google" ends up being the way around the limit.
+   *
+   * Order matters: mint first, revoke second, and revoke everything EXCEPT the
+   * family just created. Revoking first would leave a window where the user has
+   * no session at all, and a failure in between would sign them out of the
+   * device they were already using without giving them the new one.
+   *
+   * Absent, malformed or false all mean no — the same reading
+   * `planAllowsConcurrentSessions` documents. A user with no company
+   * (SUPERADMIN) has no plan to read and is left alone: there is no seat to
+   * protect, and locking the platform operator to one browser is a rule nobody
+   * asked for.
+   */
+  private async enforceSingleSession(
+    user: { id: string; tenantId?: string | null },
+    keepFamilyId: string,
+  ): Promise<void> {
+    if (!user.tenantId) return;
+    const tenant = await this.prisma.db.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { plan: { select: { features: true } } },
+    });
+    if (planAllowsConcurrentSessions(tenant?.plan?.features)) return;
+    await this.revokeOtherFamilies(user.id, keepFamilyId, 'SIGNED_IN_ELSEWHERE');
   }
 
   /**

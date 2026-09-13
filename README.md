@@ -75,7 +75,7 @@ observabilidade e testes.
 - **Contas** — verificação de e-mail por código, reset de senha, troca de e-mail por código, exportação dos próprios dados e exclusão da conta.
 - **Sessões** — gerenciamento de sessões ativas: veja seus dispositivos e revogue qualquer um.
 - **Controle de acesso** — perfis por empresa com matriz de permissões, painel `/admin` para o ADMIN da empresa e audit log imutável de quem fez o quê.
-- **Planos** — plano padrão com trial, `maxUsers` e contadores nomeados, impostos de verdade na hora de criar.
+- **Planos** — plano padrão com trial. `maxUsers` é imposto no aceite do convite **e na reativação de conta**, dentro da transação que grava; os contadores nomeados de `Plan.limits` valem para cada recurso que um módulo registrar; e `concurrentSessions` decide se o usuário pode estar logado em mais de um lugar. `maxStorageMb` é metadado comercial, como o preço — **não** é imposto, e o README diz isso em vez de deixar você descobrir.
 - **Back-office do operador** — painel em `/platform` sobre `/api/platform/*`: estatísticas da base, **criar empresa** (que convida o primeiro admin em vez de definir senha para ele), suspender/reativar empresa, estender trial, trocar plano e CRUD de planos.
 - **Perfis e arquivos** — perfis editáveis e uploads atrás de um driver de storage trocável.
 - **i18n** — pt-BR + en-US com seletor de bandeira SVG; chaves mantidas em paridade por testes.
@@ -93,6 +93,7 @@ pnpm --filter @dontpanic/shared build      # contratos compartilhados
 pnpm --filter @dontpanic/api db:migrate     # cria o schema
 pnpm --filter @dontpanic/api db:seed        # cria o admin inicial
 pnpm dev                       # API :4201 · Web :4200  (Don't Panic.)
+pnpm --filter @dontpanic/api worker:dev   # noutro terminal: sem ele, e-mail não sai
 ```
 
 A ordem importa: a **role restrita do banco é criada por uma migration**
@@ -125,8 +126,28 @@ Comandos do dia a dia:
 | Migration      | `pnpm --filter @dontpanic/api db:migrate` |
 | Seed           | `pnpm --filter @dontpanic/api db:seed`    |
 | Prisma Studio  | `pnpm --filter @dontpanic/api db:studio`  |
+| Worker (dev)   | `pnpm --filter @dontpanic/api worker:dev` |
 | Storybook      | `pnpm --filter @dontpanic/web storybook`  |
 | Auditoria deps | `pnpm audit`                              |
+
+### Fila de jobs e o worker
+
+`QUEUE_DRIVER=bullmq` (o padrão) põe o trabalho no Redis e um processo **separado** consome
+(`pnpm --filter @dontpanic/api worker`). A separação é o ponto: um SMTP lento não atrasa a resposta,
+e job que falha é repetido em vez de perdido junto com o request. **Sem o worker rodando, e-mail
+nenhum sai** — nem verificação de e-mail, nem reset de senha, nem convite.
+
+`QUEUE_DRIVER=memory` roda inline em quem enfileirou, para testes e para `pnpm dev` sem worker. Não
+é uma fila: sem durabilidade, sem retry, sem processo separado. **Não use em produção.**
+
+Em produção o worker sai na **mesma imagem** da API — `nest build` emite `dist/worker.js` ao lado do
+`dist/main.js`. Suba um segundo container sobrescrevendo o comando para `node dist/worker.js`. **Só
+o container da API roda migration**: dois processos disputando a mesma migration é como um deploy
+corrompe o próprio histórico de schema.
+
+O tenant viaja **com** o job, capturado no `enqueue`: um job roda fora de qualquer request e não
+herda escopo nenhum, então ler sem reestabelecê-lo faria o RLS devolver zero linhas e o job
+terminaria "com sucesso" tendo visto um banco vazio.
 
 ### Multi-tenancy com RLS do Postgres
 
@@ -248,6 +269,15 @@ env. Trocar de provider = trocar uma variável, sem tocar na lógica. Ports vive
 | E-mail  | `MailProvider`    | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
 | Cache   | `CacheProvider`   | `redis`, `memory`                      | `CACHE_DRIVER`   |
 | Captcha | `CaptchaProvider` | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
+| Jobs    | `QueueProvider`   | `bullmq`, `memory`                     | `QUEUE_DRIVER`   |
+
+**O banco não está na tabela, e isso é deliberado: é Postgres, sempre.** O isolamento entre empresas
+é Row Level Security em PL/pgSQL e o cliente é `@prisma/adapter-pg`. Um `DB_PROVIDER=mysql` subiria
+a aplicação com o isolamento simplesmente ausente, sem erro nenhum — a pior opção é a que parece
+funcionar.
+
+Com `STORAGE_DRIVER=local` a API serve `LOCAL_STORAGE_DIR` em `LOCAL_STORAGE_PUBLIC_URL`; com `s3`
+ela não monta rota estática nenhuma, porque seria superfície aberta sem nada atrás.
 
 Em teste, `memory` / `console` / `local` rodam sem Docker.
 
@@ -369,7 +399,7 @@ with it — alongside auth, 2FA, profiles, file uploads, i18n, theming, observab
 - **Accounts** — email verification by code, password reset, email change by code, self-service data export and account deletion.
 - **Sessions** — active-session management: see your devices and revoke any of them.
 - **Access control** — per-company profiles with a permission matrix, an `/admin` panel for the company ADMIN, and an immutable audit log of who did what.
-- **Plans** — a default plan with a trial, `maxUsers` and named counters, actually enforced at creation time.
+- **Plans** — a default plan with a trial. `maxUsers` is enforced when an invitation is accepted **and when an account is reactivated**, inside the transaction that writes; the named counters in `Plan.limits` apply to every resource a module registers; and `concurrentSessions` decides whether one user may be signed in in more than one place. `maxStorageMb` is commercial metadata, like the price — **not** enforced, and this README says so rather than letting you find out.
 - **Operator back-office** — a `/platform` panel over `/api/platform/*`: customer-base stats, **creating a company** (which invites its first admin rather than setting a password for them), suspending and reactivating a company, extending a trial, changing its plan, and plan CRUD.
 - **Profiles & files** — editable profiles and uploads behind a swappable storage driver.
 - **i18n** — pt-BR + en-US with an SVG flag switcher; keys kept in parity by tests.
@@ -387,6 +417,7 @@ pnpm --filter @dontpanic/shared build      # shared contracts
 pnpm --filter @dontpanic/api db:migrate     # creates the schema
 pnpm --filter @dontpanic/api db:seed        # creates the initial admin
 pnpm dev                       # API :4201 · Web :4200  (Don't Panic.)
+pnpm --filter @dontpanic/api worker:dev   # another terminal: without it, no mail leaves
 ```
 
 The order matters: the **restricted database role is created by a migration** (`*_app_role`) that
@@ -418,8 +449,29 @@ Everyday commands:
 | Migration        | `pnpm --filter @dontpanic/api db:migrate` |
 | Seed             | `pnpm --filter @dontpanic/api db:seed`    |
 | Prisma Studio    | `pnpm --filter @dontpanic/api db:studio`  |
+| Worker (dev)     | `pnpm --filter @dontpanic/api worker:dev` |
 | Storybook        | `pnpm --filter @dontpanic/web storybook`  |
 | Dependency audit | `pnpm audit`                              |
+
+### Job queue and the worker
+
+`QUEUE_DRIVER=bullmq` (the default) puts work on Redis and a **separate** process consumes it
+(`pnpm --filter @dontpanic/api worker`). The split is the point: a slow SMTP host cannot slow a
+response, and a job that fails is retried instead of lost along with the request. **With no worker
+running, no mail ever leaves** — not email verification, not password reset, not invitations.
+
+`QUEUE_DRIVER=memory` runs jobs inline in whoever enqueued them, for tests and for `pnpm dev`
+without a worker. It is not a queue: no durability, no retry, no separate process. **Do not use it
+in production.**
+
+In production the worker ships in the **same image** as the API — `nest build` emits
+`dist/worker.js` next to `dist/main.js`. Run a second container overriding the command with
+`node dist/worker.js`. **Only the API container runs migrations**: two processes racing the same
+migration is how a deploy corrupts its own schema history.
+
+The tenant travels **with** the job, captured at `enqueue`: a job runs outside any request and
+inherits no scope, so reading without re-establishing it would make RLS return zero rows and the job
+would finish "successfully" having seen an empty database.
 
 ### Multi-tenancy with Postgres RLS
 
@@ -546,6 +598,15 @@ an env var. Swap a provider by swapping one variable — no logic touched. Ports
 | Mail     | `MailProvider`    | `smtp`, `ses`, `console`               | `MAIL_DRIVER`    |
 | Cache    | `CacheProvider`   | `redis`, `memory`                      | `CACHE_DRIVER`   |
 | Captcha  | `CaptchaProvider` | `turnstile`, `recaptcha-v2/v3`, `none` | `CAPTCHA_DRIVER` |
+| Jobs     | `QueueProvider`   | `bullmq`, `memory`                     | `QUEUE_DRIVER`   |
+
+**The database is not in the table, and that is deliberate: it is Postgres, always.** Tenant
+isolation is Row Level Security written in PL/pgSQL and the client is `@prisma/adapter-pg`. A
+`DB_PROVIDER=mysql` would boot the app with the isolation simply absent and no error anywhere — the
+worst kind of option is the one that looks like it works.
+
+With `STORAGE_DRIVER=local` the API serves `LOCAL_STORAGE_DIR` at `LOCAL_STORAGE_PUBLIC_URL`; with
+`s3` it mounts no static route at all, because that would be an open surface with nothing behind it.
 
 In tests, `memory` / `console` / `local` run without Docker.
 

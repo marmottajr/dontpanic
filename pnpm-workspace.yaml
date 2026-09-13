@@ -33,10 +33,34 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   workerd: false
+# The supply-chain delay, in minutes: never resolve a version published less
+# than 4320 minutes (3 days) ago. Almost every npm account takeover of recent
+# years was noticed and the malicious version unpublished within hours to a
+# couple of days, so most of that risk disappears by simply not being the first
+# to install. The cost is a three-day wait for a release nobody urgently needs.
+#
+# Why 3 days and not a week: pnpm verifies EVERY entry already in the lockfile
+# against this policy, not just new resolutions. A longer window would reject a
+# hundred perfectly ordinary transitive entries (the @aws-sdk tree republishes
+# almost daily) and the only ways out would be an exclude list nobody can audit
+# or turning the policy off — which is how this setting ends up documented but
+# absent, exactly the state it was found in.
+#
+# A CVE patch that cannot wait is the exception, and the exception has a name:
+# put the exact `name@version` in the list below with a comment saying why, so
+# the waiver is one package instead of the whole policy.
+minimumReleaseAge: 4320
+# Versions deliberately adopted before the delay above is up.
 minimumReleaseAgeExclude:
+  # The next-intl 4.14.3 family, already in the lockfile and already reviewed
+  # when it was adopted. Listed so turning the policy on did not mean either
+  # re-resolving i18n for no reason or weakening the window for everything.
+  - next-intl@4.14.3
+  - use-intl@4.14.3
+  - icu-minify@4.14.3
+  - next-intl-swc-plugin-extractor@4.14.3
   - '@aws-sdk/client-s3@3.1068.0'
   - '@aws-sdk/client-ses@3.1068.0'
-  - '@aws-sdk/s3-request-presigner@3.1068.0'
   - eslint@10.5.0
   - lucide-react@1.18.0
   - react-hook-form@7.79.0

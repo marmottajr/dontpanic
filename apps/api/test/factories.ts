@@ -15,6 +15,10 @@ export function makeUser(overrides: Partial<User> = {}): User {
     twoFactorSecret: null,
     failedLoginAttempts: 0,
     lockedUntil: null,
+    // The seat on the company's plan. Non-nullable in the schema, so a real row
+    // always carries it — and the auth paths now refuse a falsy one, which an
+    // incomplete fixture would trip over for the wrong reason.
+    active: true,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,

@@ -295,6 +295,21 @@ describe('AuthService', () => {
       expect(tokenService.issueTokensForUser).not.toHaveBeenCalled();
     });
 
+    // An account with `active: false` holds no seat on the plan, so it must not
+    // hold a session either — otherwise freeing a seat changes the bill and
+    // nothing else. It is refused with the SAME generic message as a deleted or
+    // non-existent account, and pays the same Argon2 cost, so the login form
+    // never tells an outsider which addresses exist but are switched off.
+    it('refuses a deactivated account generically, still paying the argon2 cost', async () => {
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', active: false }));
+      prisma.user.update.mockResolvedValue(makeUser({ id: 'u1', failedLoginAttempts: 1 }));
+      mockedArgon.verify.mockResolvedValue(true);
+
+      await expect(service.login(input as never, ctx)).rejects.toThrow('Invalid credentials');
+      expect(mockedArgon.verify).toHaveBeenCalled();
+      expect(tokenService.issueTokensForUser).not.toHaveBeenCalled();
+    });
+
     it('returns a 2FA challenge (ticket) when 2FA is enabled', async () => {
       prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', twoFactorEnabled: true }));
       mockedArgon.verify.mockResolvedValue(true);
@@ -359,6 +374,20 @@ describe('AuthService', () => {
       await expect(service.verifyTwoFactor('ticket', '123456', ctx)).rejects.toThrow(
         /Invalid or expired 2FA challenge/,
       );
+    });
+
+    // The ticket outlives the check that minted it: an admin can deactivate
+    // somebody in the seconds between the password and the code, and the second
+    // step must not be a way around a decision taken in the meantime.
+    it('rejects a ticket whose account was deactivated in the meantime', async () => {
+      cache.get.mockResolvedValue('u1');
+      prisma.user.findUnique.mockResolvedValue(
+        makeUser({ id: 'u1', twoFactorEnabled: true, twoFactorSecret: 'SECRET', active: false }),
+      );
+      await expect(service.verifyTwoFactor('ticket', '123456', ctx)).rejects.toThrow(
+        /Invalid or expired 2FA challenge/,
+      );
+      expect(tokenService.issueTokensForUser).not.toHaveBeenCalled();
     });
 
     it('issues tokens on a valid TOTP code and burns the ticket', async () => {
@@ -443,6 +472,16 @@ describe('AuthService', () => {
       replacedById: null,
       expiresAt: new Date(Date.now() + 100000),
       ...over,
+    });
+
+    // Deactivating revokes the refresh tokens, but one issued moments earlier
+    // can still be in flight. Refusing to rotate it caps the leftover access at
+    // a single access-token lifetime instead of a whole refresh TTL.
+    it('refuses to rotate for a deactivated account', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue(row());
+      prisma.user.findUnique.mockResolvedValue(makeUser({ id: 'u1', active: false }));
+      await expect(service.refresh(rawToken, ctx)).rejects.toThrow('Invalid session');
+      expect(tokenService.issueTokensInFamily).not.toHaveBeenCalled();
     });
 
     it('detects reuse of an already-revoked token and nukes the family', async () => {

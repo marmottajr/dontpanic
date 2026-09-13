@@ -59,13 +59,37 @@ export type ResourceCounter = (db: Prisma.TransactionClient, tenantId: string) =
 export class PlanLimitsService {
   /**
    * Counters for product resources, registered by the feature modules that own
-   * them: `planLimits.registerResource('projects', (db, tenantId) => …)`. The
-   * boilerplate ships none — `users` is built in because every SaaS has it.
+   * them. The boilerplate ships NONE, and that is not an omission: `users` is
+   * built in because every SaaS has users, and there is no second resource
+   * until a product invents one.
    */
   private readonly resources = new Map<string, ResourceCounter>();
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * The extension point of this service — deliberately empty in the
+   * boilerplate, and the only reason `assertCanAddResource` has no call site.
+   *
+   * Adding a limited resource to a product is three steps:
+   *
+   * 1. In the owning module's `onModuleInit`, declare how to count it:
+   *    `planLimits.registerResource('projects', (db, tenantId) =>
+   *       db.project.count({ where: { tenantId, deletedAt: null } }))`
+   *    The counter receives the transaction, so it counts inside the same
+   *    snapshot and the same advisory lock as the check that calls it.
+   * 2. Put the ceiling in the plan: `Plan.limits = {"projects": 10}`. A name
+   *    absent from `limits` means unlimited, which is what every existing plan
+   *    keeps meaning after you add the resource.
+   * 3. Call `assertCanAddResource('projects', tx)` in the SAME transaction that
+   *    creates the row — every door the resource can be born through, creation
+   *    and restore-from-trash alike. Outside the transaction the count locks
+   *    nothing and the limit is decorative.
+   *
+   * The name is the join between the three, so it has to be spelled the same
+   * in all of them; `assertCanAddResource` throws on a name nobody registered
+   * precisely so a typo is loud instead of silently unlimited.
+   */
   registerResource(name: string, count: ResourceCounter): void {
     this.resources.set(name, count);
   }
@@ -100,7 +124,9 @@ export class PlanLimitsService {
    * Applies to creating and to **reactivating**: a deactivated account takes no
    * seat, and switching it back on takes one — without this call on the
    * reactivation path, the limit could be walked around by deactivating and
-   * reactivating at will.
+   * reactivating at will. Both call sites pass their own `tx`
+   * (`InvitationsService.accept`, `AdminUsersService.setActive`), because the
+   * lock below is only worth taking around the write it is protecting.
    */
   async assertCanAddUser(tx?: Prisma.TransactionClient): Promise<void> {
     const db = tx ?? this.prisma.db;
