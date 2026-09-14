@@ -9,7 +9,11 @@ test('login page renders the credentials form', async ({ page }) => {
 test('signup page renders the company registration form', async ({ page }) => {
   await page.goto('/signup');
   await expect(page).toHaveURL(/\/signup/);
-  await expect(page.getByRole('textbox', { name: /empresa|company name/i })).toBeVisible();
+  // Anchored on the whole label. `/empresa/` also matched "Endereço da empresa" (the slug
+  // field), and Playwright's strict mode refuses a locator that resolves to two elements.
+  await expect(
+    page.getByRole('textbox', { name: /^(nome da empresa|company name)$/i }),
+  ).toBeVisible();
   await expect(page.getByRole('textbox', { name: /e-?mail/i })).toBeVisible();
 });
 
