@@ -11,7 +11,8 @@ import type { NextConfig } from 'next';
 // overwrites what the process already has.
 loadEnv({ path: ['../../.env', '.env'], quiet: true });
 import createNextIntlPlugin from 'next-intl/plugin';
-import { withSentryConfig } from '@sentry/nextjs';
+// Sentry v11 moved the build-time wrapper to its own entry point.
+import { withSentryConfig } from '@sentry/nextjs/config';
 
 const require = createRequire(import.meta.url);
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');

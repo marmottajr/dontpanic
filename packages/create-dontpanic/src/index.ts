@@ -25,12 +25,14 @@ function run(cmd: string, args: string[], cwd: string): boolean {
   return res.status === 0;
 }
 
-function bail<T>(value: T | symbol): T {
+// @clack/prompts 1.9 types the cancel value as its own unique symbol, so `T`
+// would otherwise be inferred with that symbol still in the union.
+function bail<T>(value: T): Exclude<T, symbol> {
   if (isCancel(value)) {
     cancel("Cancelled. Don't Panic — nothing was changed.");
     process.exit(0);
   }
-  return value as T;
+  return value as Exclude<T, symbol>;
 }
 
 async function main(): Promise<void> {
