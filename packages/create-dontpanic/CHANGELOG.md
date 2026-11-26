@@ -1,5 +1,11 @@
 # create-dontpanic
 
+## 0.3.1
+
+### Patch Changes
+
+- 266e343: Template on the November dependency updates (Sentry 11, Next, NestJS, Storybook and the rest), with the audit gate clean again.
+
 ## 0.3.0
 
 ### Minor Changes
