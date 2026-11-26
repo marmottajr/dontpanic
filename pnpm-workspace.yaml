@@ -13,12 +13,36 @@ overrides:
   # deepmerge-ts: stack exhaustion on recursive objects (GHSA-ggr8-5vv4-36mx).
   # mysql2: auth-plugin downgrade leaking plaintext credentials
   # (GHSA-3f6p-5ww8-9rcr) + GHSA for <=3.23.0.
+  # effect <=3.22.0: ReDoS in Schema.TemplateLiteral (GHSA-7589-6fvf-x4pw), via
+  # @prisma/config. Scoped to that parent and kept on 3.x, the line it targets.
   deepmerge-ts: '>=8.0.0'
   mysql2: '>=3.23.1'
+  '@prisma/config>effect': '^3.22.1'
   # esbuild < 0.28.1 has a HIGH advisory (GHSA-gv7w-rqvm-qjhr: missing binary
   # integrity check → RCE via NPM_CONFIG_REGISTRY). Pulled transitively
   # (Storybook/Vite/tsup), so force every copy to the patched release.
   esbuild: '>=0.28.1'
+  # GHSA-g84c-rxfj-3j2c (high): webpack-dev-middleware <7.4.5. Arrives only via
+  # @storybook/builder-webpack5 (asks ^6.1.2, dev-only). 7.x keeps the API it uses.
+  # https://github.com/advisories/GHSA-g84c-rxfj-3j2c
+  webpack-dev-middleware: '^7.4.5'
+  # Dev and build tooling only, nothing here ships in the API or web runtime.
+  # Each is pinned to the patched release on the line its parents already ask
+  # for, so no dependent is pushed across a major.
+  # brace-expansion: DoS via uncontrolled recursion (minimatch under jest,
+  # @nestjs/cli and Storybook's fork-ts-checker), on all three lines in use.
+  'brace-expansion@<2': '^1.1.20'
+  'brace-expansion@>=2 <3': '^2.1.6'
+  'brace-expansion@>=4 <6': '^5.0.11'
+  # source-map-js <1.2.2: event-loop DoS (magicast under @prisma/config).
+  source-map-js: '^1.2.2'
+  # @changesets/cli pulls launch-editor <=2.14.1 (existence check) and, through
+  # it, shell-quote <1.11.0 (CRITICAL: quote() command injection).
+  launch-editor: '^2.14.2'
+  shell-quote: '^1.11.0'
+  # zod <4.6.6: memory exhaustion on oversized input. Only eslint-plugin-react-hooks
+  # still resolved an older 4.x; the apps are already on 4.6.7.
+  'zod@>=4 <4.6.6': '^4.6.7'
 allowBuilds:
   '@parcel/watcher': true
   '@prisma/engines': true
